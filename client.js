@@ -2,6 +2,7 @@ const playground = document.getElementById('playground');
 const ctx = playground.getContext("2d");
 
 let screenW = 0, screenH = 0; // larghezza ed altezza del canvas
+const camera = { x: 0, y: 0, zoom: 1.0 };
 const worldW = 1000, worldH = 600; // larghezza ed altezza dello spazio di gioco
 const worldBounds = {
     top: -worldH/2,
@@ -9,7 +10,7 @@ const worldBounds = {
     bottom: worldH/2,
     right: worldW/2,
 };
-const camera = { x: 0, y: 0, zoom: 1.0 };
+
 
 function resize() {
     screenW = window.innerWidth;
@@ -20,33 +21,30 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-let me = {
-    x: 0,
-    y: 0,
-    speed: 5,
-    character: 'normalGuy'
-};
-let others = []; // TODO riempire con i dati che arrivano dal server
+let myId = null;
+let people = {};
 
 const personW = 40;
 const personH = 120;
+const personSpeed = 170;
 
-function draw() {
-    // gestione movimento
-    if (goingUp) me.y -= me.speed;
-    if (goingLeft) me.x -= me.speed;
-    if (goingDown) me.y += me.speed;
-    if (goingRight) me.x += me.speed;
+let prevFrameTime = 0;
+function draw(now) {
+    const dt = prevFrameTime ? (now - prevFrameTime) / 1000 : 0;
+    prevFrameTime = now;
 
-    // controllo che il giocatore non esca dallo spazio di gioco
-    if (me.y - personH/2 < worldBounds.top) me.y = worldBounds.top + personH/2;
-    if (me.y + personH/2 > worldBounds.bottom) me.y = worldBounds.bottom - personH/2;
-    if (me.x - personW/2 < worldBounds.left) me.x = worldBounds.left + personW/2;
-    if (me.x + personW/2 > worldBounds.right) me.x = worldBounds.right - personW/2;
+    const me = myId ? people[myId] : null;
+    if (me) {
+        // gestione movimento
+        if (goingUp) me.y -= personSpeed * dt;
+        if (goingLeft) me.x -= personSpeed * dt;
+        if (goingDown) me.y += personSpeed * dt;
+        if (goingRight) me.x += personSpeed * dt;
 
-    // la camera segue il giocatore
-    camera.x = me.x;
-    camera.y = me.y;
+        // la camera segue il giocatore
+        camera.x = me.x;
+        camera.y = me.y;
+    }
 
     // pulisci lo schermo
     ctx.beginPath();
@@ -65,8 +63,13 @@ function draw() {
         ctx.fillStyle = "#58a515";
         ctx.fill();
 
-        others.forEach(p => drawPerson(p.x, p.y, personW, personH, p.character));
-        drawPerson(me.x, me.y, personW, personH, me.character);
+        Object.values(people).forEach(p => {
+            if (p.id !== myId) {
+                if (p.targetX !== undefined) p.x += (p.targetX - p.x) * 0.37;
+                if (p.targetY !== undefined) p.y += (p.targetY - p.y) * 0.37;
+            }
+            drawPerson(p.x, p.y, personW, personH, p.character);
+        });
     ctx.restore();
 
     requestAnimationFrame(draw);
@@ -78,9 +81,28 @@ function drawPerson(x, y, w, h, style) {
     drawFunction(x, y, w, h, style);
 }
 
-const socket = new WebSocket(`ws://localhost:4242`);
+const socket = new WebSocket("ws://localhost:4242");
 socket.addEventListener("message", async event => {
-    // TODO aggiornare lo stato in base ai messaggi del server
+    console.log(event.data);
+    const msg = JSON.parse(event.data);
+    if (msg.kind === "init") {
+        myId = msg.yourId;
+        people = msg.people;
+    }
+    else if (msg.kind === "tick") {
+        // people = msg.people;
+        Object.values(msg.people).forEach(p => {
+            if (!people[p.id]) people[p.id] = p;
+            else if (p.id != myId){
+                people[p.id].targetX = p.x;
+                people[p.id].targetY = p.y;
+            }
+        });
+    }
+    else if (msg.kind === "exit") {
+        console.log(msg);
+        delete people[msg.personId];
+    }
 });
 
 // TODO spostare la gestione dei movimenti sul server
@@ -101,6 +123,11 @@ document.addEventListener("keyup", (event) => {
     else if (event.code == "KeyS") goingDown = false;
     else if (event.code == "KeyD") goingRight = false;
 });
+
+setInterval(() => {
+    const me = myId ? people[myId] : null;
+    if (me) socket.send(JSON.stringify({ act: 'move', x: me.x, y: me.y }));
+}, 1000/20);
 
 // gestione dello zoom
 const minZoom = 0.1, maxZoom = 4;
@@ -128,7 +155,6 @@ function drawNormalGuy(x, y, w, h, style = {}) {
     ctx.translate(x, y);
     const startX = -w/2;
     const startY = -h/2;
-
 
     // +head
     const headH = h * 0.3;
