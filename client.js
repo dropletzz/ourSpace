@@ -2,7 +2,7 @@ const playground = document.getElementById('playground');
 const ctx = playground.getContext("2d");
 
 let screenW = 0, screenH = 0; // larghezza ed altezza del canvas
-const camera = { x: 0, y: 0, zoom: 1.0 };
+const camera = { x: 0, y: 0, zoom: 0.5 };
 const worldW = 1000, worldH = 600; // larghezza ed altezza dello spazio di gioco
 const worldBounds = {
     top: -worldH/2,
@@ -35,11 +35,30 @@ function draw(now) {
 
     const me = myId ? people[myId] : null;
     if (me) {
-        // gestione movimento
-        if (goingUp) me.y -= personSpeed * dt;
-        if (goingLeft) me.x -= personSpeed * dt;
-        if (goingDown) me.y += personSpeed * dt;
-        if (goingRight) me.x += personSpeed * dt;
+        let moveDirX = 0;
+        let moveDirY = 0;
+
+        if (joystick.active) {
+            moveDirX = joystick.dx;
+            moveDirY = joystick.dy;
+        } else {
+            // Tastiera
+            if (goingLeft) moveDirX -= 1;
+            if (goingRight) moveDirX += 1;
+            if (goingUp) moveDirY -= 1;
+            if (goingDown) moveDirY += 1;
+
+            // Normalizza la diagonale
+            if (moveDirX !== 0 && moveDirY !== 0) {
+                const length = Math.sqrt(moveDirX * moveDirX + moveDirY * moveDirY);
+                moveDirX /= length;
+                moveDirY /= length;
+            }
+        }
+
+        // Applica il movimento calcolato (assicurati che non ci siano altri me.x o me.y qui sotto!)
+        me.x += moveDirX * personSpeed * dt;
+        me.y += moveDirY * personSpeed * dt;
 
         // la camera segue il giocatore
         camera.x = me.x;
@@ -58,10 +77,25 @@ function draw(now) {
         ctx.translate(-camera.x, -camera.y); // sposta relativamente alla camera
 
         // disegna lo sfondo del "mondo" (campo da gioco)
-        ctx.beginPath();
-        ctx.rect(worldBounds.left, worldBounds.top, worldW, worldH);
-        ctx.fillStyle = "#58a515";
-        ctx.fill();
+        const tileSize = 50; // Grandezza di ogni quadrato (modificala per scacchi più o meno grandi)
+        
+        for (let x = worldBounds.left; x < worldBounds.right; x += tileSize) {
+            for (let y = worldBounds.top; y < worldBounds.bottom; y += tileSize) {
+                
+                // Calcola l'indice della colonna e della riga correnti
+                const col = Math.floor((x - worldBounds.left) / tileSize);
+                const row = Math.floor((y - worldBounds.top) / tileSize);
+                
+                // Alterna i colori in base a se la somma di riga+colonna è pari o dispari
+                const isEven = (col + row) % 2 === 0;
+
+                ctx.beginPath();
+                ctx.rect(x, y, tileSize, tileSize);
+                // Vibe Check: Scegli le due tonalità qui! (Ora sono due verdi stile prato)
+                ctx.fillStyle = isEven ? "#58a515" : "#4e9412"; 
+                ctx.fill();
+            }
+        }
 
         Object.values(people).forEach(p => {
             if (p.id !== myId) {
@@ -71,6 +105,28 @@ function draw(now) {
             drawPerson(p.x, p.y, personW, personH, p.character);
         });
     ctx.restore();
+
+    if (joystick.active) {
+        ctx.save();
+        ctx.globalAlpha = 0.4; // Semi-trasparente
+
+        // Disegna la base
+        ctx.beginPath();
+        ctx.arc(joystick.baseX, joystick.baseY, joystick.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#000000";
+        ctx.stroke();
+
+        // Disegna la levetta centrale
+        ctx.beginPath();
+        ctx.arc(joystick.stickX, joystick.stickY, joystick.radius / 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#000000";
+        ctx.fill();
+
+        ctx.restore();
+    }
 
     requestAnimationFrame(draw);
 }
@@ -111,6 +167,18 @@ let goingLeft = false;
 let goingDown = false;
 let goingRight = false;
 
+// --- GESTIONE TOUCH / VIRTUAL JOYSTICK ---
+const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+const joystick = {
+    active: false,
+    baseX: 0, baseY: 0,
+    stickX: 0, stickY: 0,
+    radius: 60, // Dimensione massima del joystick
+    dx: 0, dy: 0 // Vettore di movimento normalizzato (-1 a 1)
+};
+let movementTouchId = null; // Per tracciare quale dito muove il joystick
+
 document.addEventListener("keydown", (event) => {
     if (event.code == "KeyW") goingUp = true;
     else if (event.code == "KeyA") goingLeft = true;
@@ -143,6 +211,76 @@ window.addEventListener('wheel', (event) => {
 
     camera.zoom = Math.min(Math.max(minZoom, camera.zoom), maxZoom);
 }, { passive: false });
+
+if (isTouchDevice) {
+    playground.addEventListener('touchstart', (e) => {
+        e.preventDefault(); // Evita scroll o zoom accidentali
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            
+            // Se tocchi la metà sinistra dello schermo, àncora il joystick
+            if (!joystick.active) {
+                movementTouchId = touch.identifier;
+                joystick.active = true;
+                joystick.baseX = touch.clientX;
+                joystick.baseY = touch.clientY;
+                joystick.stickX = touch.clientX;
+                joystick.stickY = touch.clientY;
+                joystick.dx = 0;
+                joystick.dy = 0;
+            }
+        }
+    }, { passive: false });
+
+    playground.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (joystick.active && touch.identifier === movementTouchId) {
+                let dx = touch.clientX - joystick.baseX;
+                let dy = touch.clientY - joystick.baseY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Blocca il cursore all'interno del raggio base
+                if (distance > joystick.radius) {
+                    dx = (dx / distance) * joystick.radius;
+                    dy = (dy / distance) * joystick.radius;
+                }
+
+                joystick.stickX = joystick.baseX + dx;
+                joystick.stickY = joystick.baseY + dy;
+
+                // Calcola l'intensità (da 0.0 a 1.0) per la velocità analogica
+                const magnitude = distance > joystick.radius ? 1 : distance / joystick.radius;
+                
+                // Aggiungi una piccola "deadzone" centrale per evitare movimenti involontari
+                if (magnitude > 0.1) {
+                    joystick.dx = (dx / (distance || 1)) * magnitude;
+                    joystick.dy = (dy / (distance || 1)) * magnitude;
+                } else {
+                    joystick.dx = 0;
+                    joystick.dy = 0;
+                }
+            }
+        }
+    }, { passive: false });
+
+    const handleTouchEnd = (e) => {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (joystick.active && touch.identifier === movementTouchId) {
+                joystick.active = false;
+                joystick.dx = 0;
+                joystick.dy = 0;
+                movementTouchId = null;
+            }
+        }
+    };
+
+    playground.addEventListener('touchend', handleTouchEnd);
+    playground.addEventListener('touchcancel', handleTouchEnd);
+}
 
 const characters = {
     normalGuy: drawNormalGuy,
