@@ -14,13 +14,13 @@ const personH = 120;
 const personSpeed = 170;
 
 let idCounter = 0;
-function newPerson() {
-    idCounter += 1;
+
+function newPerson(id, character) {
     return {
-        id: idCounter+'',
+        id: id,
         x: 0,
         y: 0,
-        character: 'normalGuy'
+        character: character
     }
 };
 
@@ -28,16 +28,15 @@ server.on("connection", (ws, req) => {
     const clientIp = req.socket.remoteAddress;
     console.log("Nuova connessione da " + clientIp);
 
-    const person = newPerson();
-    ws.id = person.id;
-    people[person.id] = person;
-    const newPersonMsg = {
-        kind: 'init',
-        yourId: person.id,
-        people: people
-    };
-    ws.send(JSON.stringify(newPersonMsg));
-    newPeopleIds.push(person.id);
+    idCounter += 1;
+    ws.id = idCounter+'';
+    ws.send(JSON.stringify({ kind: 'id', id: ws.id }));
+    // people[person.id] = person;
+    // const newPersonMsg = {
+    //     kind: 'init',
+    //     yourId: person.id,
+    //     people: people
+    // };
 
     ws.on("message", async data => {
         newMessages.push({ senderId: ws.id, content: JSON.parse(data) });
@@ -61,6 +60,7 @@ async function tick() {
     prevTickTime = now;
 
     const updatedPeople = {};
+    const newPeople = {};
 
     if (newMessages.length > 0) {
         const messages = newMessages;
@@ -68,6 +68,7 @@ async function tick() {
         messages.forEach(msg => {
             const { senderId, content } = msg;
             if (content.act === 'move') {
+                console.log("MOVE", msg)
                 let person = people[senderId];
                 if (!person) return;
                 const xDist = Math.abs(person.x - content.x);
@@ -75,22 +76,35 @@ async function tick() {
                 person.x = content.x;
                 person.y = content.y;
                 if (xDist > 0.000001 || yDist > 0.000001)
-                    updatedPeople[person.id] = person;
+                    updatedPeople[senderId] = person;
+            }
+            if (content.act === 'init') {
+                const person = newPerson(senderId, content.character);
+                console.log("NEW", person);
+                people[senderId] = person;
+                updatedPeople[senderId] = person;
+                newPeople[senderId] = person;
             }
         });
     }
 
-    if (newPeopleIds.length > 0) {
-        const peopleIds = newPeopleIds;
-        newPeopleIds = [];
-        peopleIds.forEach(id => updatedPeople[id] = people[id]);
-    }
-
+    const initMessage = JSON.stringify({
+        kind: 'init',
+        people: people
+    });
     const updateMessage = JSON.stringify({
         kind: 'tick',
         people: updatedPeople
     });
-    server.clients.forEach(socket => socket.send(updateMessage));
+    server.clients.forEach(socket => {
+        if (newPeople[socket.id]) {
+            socket.send(initMessage);
+            delete newPeople[socket.id];
+        }
+        else if (Object.keys(updatedPeople) > 0) {
+            socket.send(updateMessage)
+        }
+    });
 
     // // controllo che il giocatore non esca dallo spazio di gioco
     // if (me.y - personH/2 < worldBounds.top) me.y = worldBounds.top + personH/2;
@@ -99,4 +113,4 @@ async function tick() {
     // if (me.x + personW/2 > worldBounds.right) me.x = worldBounds.right - personW/2;
 }
 
-setInterval(tick, 1000/20);
+setInterval(tick, 1000);
