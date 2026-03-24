@@ -1,9 +1,23 @@
+const fs = require('fs');
+const https = require('https');
 const { WebSocketServer } = require('ws');
 
-const port = 4242;
-const server = new WebSocketServer({ port });
+const WEBSOCKET_PORT = 4242;
 
-console.log("Server ws in ascolto su ws://localhost:"+port);
+let httpsServer = null;
+if (process.env.OURSPACE_HTTPS_ENABLED) {
+    const serverConfig = {
+        key: fs.readFileSync(process.env.OURSPACE_HTTPS_KEY),
+        cert: fs.readFileSync(process.env.OURSPACE_HTTPS_CERT)
+    };
+    httpsServer = https.createServer({ port: WEBSOCKET_PORT })
+}
+
+const wsServer = httpsServer
+    ? new WebSocketServer({ server: httpsServer })
+    : new WebSocketServer({ port: WEBSOCKET_PORT });
+
+console.log("Server ws in ascolto sulla porta " + WEBSOCKET_PORT);
 
 let people = {};
 let newMessages = [];
@@ -24,7 +38,7 @@ function newPerson(id, character) {
     }
 };
 
-server.on("connection", (ws, req) => {
+wsServer.on("connection", (ws, req) => {
     const clientIp = req.socket.remoteAddress;
     console.log("Nuova connessione da " + clientIp);
 
@@ -48,7 +62,7 @@ server.on("connection", (ws, req) => {
             personId: ws.id
         });
         people[ws.id] = undefined;
-        server.clients.forEach(socket => socket.send(exitedMsg));
+        wsServer.clients.forEach(socket => socket.send(exitedMsg));
         console.log("Client disconnesso: " + clientIp);
     });
 });
@@ -68,7 +82,6 @@ async function tick() {
         messages.forEach(msg => {
             const { senderId, content } = msg;
             if (content.act === 'move') {
-                console.log("move", msg)
                 let person = people[senderId];
                 if (!person) return;
                 const xDist = Math.abs(person.x - content.x);
@@ -95,7 +108,7 @@ async function tick() {
         kind: 'tick',
         people: updatedPeople
     });
-    server.clients.forEach(socket => {
+    wsServer.clients.forEach(socket => {
         if (newPeople[socket.id]) {
             socket.send(initMessage);
             delete newPeople[socket.id];
@@ -104,7 +117,10 @@ async function tick() {
             socket.send(updateMessage)
         }
     });
-
 }
 
 setInterval(tick, 1000/30);
+
+if (httpsServer) httpsServer.listen(() => {
+    console.log('Server https in ascolto sulla porta ' + WEBSOCKET_PORT);
+});
