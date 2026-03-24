@@ -10,7 +10,7 @@ if (process.env.OURSPACE_HTTPS_ENABLED) {
         key: fs.readFileSync(process.env.OURSPACE_HTTPS_KEY),
         cert: fs.readFileSync(process.env.OURSPACE_HTTPS_CERT)
     };
-    httpsServer = https.createServer({ port: WEBSOCKET_PORT })
+    httpsServer = https.createServer(serverConfig)
 }
 
 const wsServer = httpsServer
@@ -121,6 +121,6 @@ async function tick() {
 
 setInterval(tick, 1000/30);
 
-if (httpsServer) httpsServer.listen(() => {
+if (httpsServer) httpsServer.listen(WEBSOCKET_PORT, () => {
     console.log('Server https in ascolto sulla porta ' + WEBSOCKET_PORT);
 });
