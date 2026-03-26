@@ -22,8 +22,8 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-let me = null;
-let people = []; // TODO riempire con i dati che arrivano dal server
+let myId = null;
+let people = {}; // TODO riempire con i dati che arrivano dal server
 
 const personW = 40;
 const personH = 120;
@@ -121,16 +121,16 @@ const drawRightBtn = createButton('>', () => {
     selectedCharacterIdx = mod(selectedCharacterIdx - 1, characterNames.length);
 });
 const drawOkBtn = createButton('ok', () => {
-    me = {
-        x: 0,
-        y: 0,
-        speed: 5,
+    const initMessage = {
+        kind: "init",
         character: characterNames[selectedCharacterIdx],
     };
+    socket.send(JSON.stringify(initMessage));
 }, { main: "#58a515" });
 
 
 function draw() {
+    const me = myId ? people[myId] : null;
     if (me) {
         // gestione movimento
         if (goingUp) me.y -= me.speed;
@@ -165,7 +165,9 @@ function draw() {
             ctx.fillStyle = "#58a515";
             ctx.fill();
 
-            if (me) drawPerson(me.x, me.y, personW, personH, me.character);
+            Object.values(people).forEach(p => {
+                drawPerson(p.x, p.y, personW, personH, p.character);
+            });
         ctx.restore();
     } else {
         let side = Math.min(screenH, screenW);
@@ -210,10 +212,23 @@ function drawPerson(x, y, w, h, style) {
 
 const socket = new WebSocket(`ws://localhost:4242`);
 socket.addEventListener("message", async event => {
-    // TODO aggiornare lo stato in base ai messaggi del server
+    const message = JSON.parse(event.data);
+    if(message.kind === "reset") {
+        Object.entries(message.people).forEach(entry => {
+            const [id, person] = entry;
+            if (id !== myId) {
+                people[id] = person;
+            }
+            else if (!people[myId]){
+                people[myId] = person;
+            }
+        });
+    }
+    else if (message.kind === "id"){
+        myId = message.id;
+    }
 });
 
-// TODO spostare la gestione dei movimenti sul server
 let goingUp = false;
 let goingLeft = false;
 let goingDown = false;
@@ -232,6 +247,27 @@ document.addEventListener("keyup", (event) => {
     else if (event.code == "KeyD") goingRight = false;
 });
 
+let prevX = 0, prevY = 0;
+const EPSILON = 0.00001;
+setInterval(() => {
+    const me = myId ? people[myId] : null;
+    if(me){
+        const distanzaX = Math.abs(me.x - prevX);
+        const distanzaY = Math.abs(me.y - prevY);
+
+        if(distanzaX > EPSILON || distanzaY > EPSILON){
+            prevX = me.x;
+            prevY = me.y;
+            const moveMessage = {
+                kind: "move",
+                x: me.x,
+                y: me.y,
+            };
+            socket.send(JSON.stringify(moveMessage));
+        }
+    }
+}, 1000/20);
+
 // gestione dello zoom
 const minZoom = 0.1, maxZoom = 4;
 const zoomSpeed = 0.035;
@@ -246,6 +282,12 @@ window.addEventListener('wheel', (event) => {
 
     camera.zoom = Math.min(Math.max(minZoom, camera.zoom), maxZoom);
 }, { passive: false });
+
+////////////////////////////////////////////////////
+////////////////////////////////////////////////////
+////////////////////////////////////////////////////
+////////////////////////////////////////////////////
+////////////////////////////////////////////////////
 
 function drawNormalGuy(x, y, w, h, style = {}) {
     ctx.save();
