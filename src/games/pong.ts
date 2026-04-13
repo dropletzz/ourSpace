@@ -130,7 +130,6 @@ export class PongClient extends GameClient {
 
     draw(ctx: CanvasRenderingContext2D, dt: number) {
         if (!this.players) return;
-        console.log(this.balls);
 
         const {
             screenW, screenH,
