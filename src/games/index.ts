@@ -2,7 +2,7 @@ import { GameServer, GameClient } from "./game";
 import { UserInput } from "../client/user-input";
 import { GuessGameClient, GuessGameServer } from "./guess";
 import { PongClient, PongServer } from "./multi-pong";
-
+import { MicroRacingClient, MicroRacingServer } from "./micro-racing";
 export type GameInfo = {
     client: new (userInput: UserInput, myId: string) => GameClient;
     server: new () => GameServer;
@@ -19,5 +19,10 @@ export const GAMES: Record<string, GameInfo> = {
         client: PongClient,
         server: PongServer,
         name: 'Pong'
+    },
+    microracing: {
+        client: MicroRacingClient,
+        server: MicroRacingServer,
+        name: 'Micro Racing'
     }
 }
