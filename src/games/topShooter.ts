@@ -192,6 +192,13 @@ export class shooterClient extends GameClient {
             ctx.fillStyle = "#112fd8c0"
             ctx.fillRect(zombie.x - zombieSize / 2, zombie.y - zombieSize / 2, zombieSize, zombieSize)
         });
+
+        //-------------------LOGICA DISEGNO PROIETTILI----------------------
+        this.projectiles.forEach(projectile => {
+            const projectileSize = 0.04
+            ctx.fillStyle = "rgb(245, 230, 19)"
+            ctx.arc(projectile.x-projectileSize/2, projectile.y-projectileSize/2, projectileSize, projectileSize/2, projectileSize/2)
+        })
         ctx.restore();
     }
     handleMessage(message: any) {
