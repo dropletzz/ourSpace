@@ -18,41 +18,30 @@ export class shooterServer extends GameServer{
     private wawes
     private projectiles
     private score
-    private highScore 
+    private highScore
+    private orde
+    private spawnTimer
 
     init(players) {
         this.players = players;
         this.projectiles = [];
         this.score = 0;
         this.highScore = 0;
+        this.orde = 10; // massimo numero di zombie
+        this.zombies = []; // inizializza come array vuoto
+        this.spawnTimer = 0; // timer per il prossimo spawn
 
         Object.keys(players).forEach(id =>{
             const player = players[id];
             player.x = 0;
             player.y = 0;
-
-        })
-
-        this.zombies = [
-            //TODO posizione random
-            {
-                x: BORDERS.left,
-                y: BORDERS.top,
-                vita: 100
-            },
-            {
-                x: BORDERS.right,
-                y: BORDERS.bottom,
-                vita: 100
-            },
-        ];
+        });
     }
 
     
     tick(incomingMessages: IncomingMsg[], dt: number): OutgoingMsg[] {
         
-        //messaggio move
-        // aggiorniamo la posizione dei giocatori che si sono mossi
+        // Aggiorna posizione dei giocatori
         incomingMessages.forEach(message => {
             const id = message.clientId;
             const payload = message.payload;
@@ -63,11 +52,70 @@ export class shooterServer extends GameServer{
                 player.y = payload.y;
             }
         });
-        //messaggio shoot
+
+        // Spawn nuovi zombie se non abbiamo raggiunto il limite
+        this.spawnTimer += dt;
+        const SPAWN_INTERVAL = 0.5; // spawn ogni 0.5 secondi
+
+        if (this.spawnTimer >= SPAWN_INTERVAL && this.zombies.length < this.orde) {
+            this.spawnTimer = 0;
+            
+            // Genera zombie in posizione casuale (anche fuori dai limiti)
+            const randomX = (Math.random() - 0.5) * 8; // da -4 a 4
+            const randomY = (Math.random() - 0.5) * 8; // da -4 a 4
+            
+            this.zombies.push({
+                x: randomX,
+                y: randomY,
+                vita: 100
+            });
+        }
+
+        // Aggiorna posizione degli zombie verso il giocatore
+        const zombieSpeed = 0.5;
+
+        this.zombies.forEach(zombie => {
+            // Trova il giocatore più vicino
+            let closestPlayer = null;
+
+            //consiglio IA
+            let minDistance = Infinity;
+
+            Object.keys(this.players).forEach(id => {
+                const player = this.players[id];
+                const dx = player.x - zombie.x;
+                const dy = player.y - zombie.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestPlayer = player;
+                }
+            });
+
+            // Se c'è un giocatore, muovi lo zombie verso di esso
+            if (closestPlayer) {
+                const dx = closestPlayer.x - zombie.x;
+                const dy = closestPlayer.y - zombie.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+
+                
+                if (length > 0) {
+                    const nx = dx / length;
+                    const ny = dy / length;
+
+                    // Muovi lo zombie
+                    zombie.x += nx * zombieSpeed * dt;
+                    zombie.y += ny * zombieSpeed * dt;
+                }
+            }
+        });
+
         return [{
             payload: {
                 players: this.players,
                 zombies: this.zombies,
+                projectiles: this.projectiles
             }
         }]
     }
@@ -80,6 +128,7 @@ import { UserInput } from '../client/user-input';
 export class shooterClient extends GameClient {
     private players = null;
     private zombies = null;
+    private projectiles = null;
 
     constructor(userInput: UserInput, myId: string) {
         super(userInput, myId);
