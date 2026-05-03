@@ -2,56 +2,60 @@ import { getCollisionSide, Player } from '../common';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { GameClient, GameServer } from './game';
 
-const BALL_SIZE = 0.03;
 const BORDERS = {
     top: -1,
     bottom: 1,
     left: -2,
     right: 2
 }
-//-------------------TEST-------------------------
-function mouseDown(event:MouseEvent):void{
-            var x: number = event.x 
-            var y: number = event.y 
 
-            
+let mouseX: number = 0;
+let mouseY: number = 0;
 
-            console.log('x=' + x + ', y=' + y)
-        }
 
 const BORDERS_W = Math.abs(BORDERS.right - BORDERS.left);
 const BORDERS_H = Math.abs(BORDERS.top - BORDERS.bottom);
+const SPAWN_INTERVAL = 0.5;
+const ZOMBIE_SPEED = 0.5;
+const PLAYER_SPEED = 1.3;
+const PLAYER_SIZE = 0.08;
+const ZOMBIE_SIZE = 0.08;
+const PROJECTILE_SIZE = 0.04;
+const FIRE_RATE = 0.4 
 
-export class shooterServer extends GameServer{
-    private players
-    private zombies
-    private wawes
-    private projectiles
-    private score
-    private highScore
-    private orde
-    private spawnTimer
+export class shooterServer extends GameServer {
+    private players;
+    private zombies;
+    private projectiles: any[] = []; // Inizializzato come array
+    private score;
+    private highScore;
+    private orde;
+    private spawnTimer;
+    private shooterTimer;
+    private playerMouseX: { [key: string]: number } = {};
+    private playerMouseY: { [key: string]: number } = {};
+    // MODIFICA: Aggiunto stato per sapere se il player sta cliccando
+    private playerIsShooting: { [key: string]: boolean } = {};
 
     init(players) {
         this.players = players;
         this.projectiles = [];
         this.score = 0;
         this.highScore = 0;
-        this.orde = 10; // massimo numero di zombie
-        this.zombies = []; // inizializza come array vuoto
-        this.spawnTimer = 0; // timer per il prossimo spawn
+        this.orde = 10;
+        this.zombies = [];
+        this.spawnTimer = 0;
+        this.shooterTimer = 0;
 
-        Object.keys(players).forEach(id =>{
+        Object.keys(players).forEach(id => {
             const player = players[id];
             player.x = 0;
             player.y = 0;
+            this.playerIsShooting[id] = false;
         });
     }
 
-    
     tick(incomingMessages: IncomingMsg[], dt: number): OutgoingMsg[] {
-        
-        // Aggiorna posizione dei giocatori
         incomingMessages.forEach(message => {
             const id = message.clientId;
             const payload = message.payload;
@@ -60,63 +64,79 @@ export class shooterServer extends GameServer{
                 const player = this.players[id];
                 player.x = payload.x;
                 player.y = payload.y;
+                this.playerMouseX[id] = payload.mouseX || 0;
+                this.playerMouseY[id] = payload.mouseY || 0;
+                // MODIFICA: Riceviamo lo stato del click dal client
+                this.playerIsShooting[id] = payload.isShooting || false;
             }
         });
 
-        // Spawn nuovi zombie se non abbiamo raggiunto il limite
+        // Spawn zombie (invariato)
         this.spawnTimer += dt;
-        const SPAWN_INTERVAL = 0.5; // spawn ogni 0.5 secondi
-
         if (this.spawnTimer >= SPAWN_INTERVAL && this.zombies.length < this.orde) {
             this.spawnTimer = 0;
-            
-            // Genera zombie in posizione casuale (anche fuori dai limiti)
-            const randomX = (Math.random() - 0.5) * 8; // da -4 a 4
-            const randomY = (Math.random() - 0.5) * 8; // da -4 a 4
-            
-            this.zombies.push({
-                x: randomX,
-                y: randomY,
-                vita: 100
+            const randomX = (Math.random() - 0.5) * 4;
+            const randomY = (Math.random() - 0.5) * 4;
+            this.zombies.push({ x: randomX, y: randomY, vita: 100 });
+        }
+
+        // MODIFICA: Gestione Proiettili (Logica di Sparo)
+        this.shooterTimer += dt;
+        if (this.shooterTimer >= FIRE_RATE) {
+            this.shooterTimer = 0;
+            Object.keys(this.players).forEach(id => {
+                // Spara solo se il player sta premendo il tasto
+                if (this.playerIsShooting[id]) {
+                    const player = this.players[id];
+                    const targetX = this.playerMouseX[id];
+                    const targetY = this.playerMouseY[id];
+
+                    // Calcolo direzione (vettore unitario)
+                    const dx = targetX - player.x;
+                    const dy = targetY - player.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > 0) {
+                        this.projectiles.push({
+                            x: player.x,
+                            y: player.y,
+                            vx: (dx / distance) * 4, // Velocità X fissa
+                            vy: (dy / distance) * 4, // Velocità Y fissa
+                            life: 1.5 // Il proiettile sparisce dopo 1.5 secondi
+                        });
+                    }
+                }
             });
         }
 
-        // Aggiorna posizione degli zombie verso il giocatore
-        const zombieSpeed = 0.5;
+        // MODIFICA: Movimento Proiettili e Pulizia
+        this.projectiles.forEach(p => {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.life -= dt;
+        });
+        // Rimuovi proiettili "morti" per non rallentare il server
+        this.projectiles = this.projectiles.filter(p => p.life > 0);
 
+        // Movimento Zombie verso giocatore (invariato)
         this.zombies.forEach(zombie => {
-            // Trova il giocatore più vicino
             let closestPlayer = null;
-
-            //consiglio IA
             let minDistance = Infinity;
-
             Object.keys(this.players).forEach(id => {
                 const player = this.players[id];
                 const dx = player.x - zombie.x;
                 const dy = player.y - zombie.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    closestPlayer = player;
-                }
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < minDistance) { { minDistance = dist; closestPlayer = player; } }
             });
 
-            // Se c'è un giocatore, muovi lo zombie verso di esso
             if (closestPlayer) {
                 const dx = closestPlayer.x - zombie.x;
                 const dy = closestPlayer.y - zombie.y;
-                const length = Math.sqrt(dx * dx + dy * dy);
-
-                
-                if (length > 0) {
-                    const nx = dx / length;
-                    const ny = dy / length;
-
-                    // Muovi lo zombie
-                    zombie.x += nx * zombieSpeed * dt;
-                    zombie.y += ny * zombieSpeed * dt;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                    zombie.x += (dx / len) * ZOMBIE_SPEED * dt;
+                    zombie.y += (dy / len) * ZOMBIE_SPEED * dt;
                 }
             }
         });
@@ -127,33 +147,55 @@ export class shooterServer extends GameServer{
                 zombies: this.zombies,
                 projectiles: this.projectiles
             }
-        }]
+        }];
     }
-    isFinished(): boolean {
-        return false 
-    }
+
+    isFinished(): boolean { return false; }
 }
 import { UserInput } from '../client/user-input';
 
 export class shooterClient extends GameClient {
     private players = null;
-    private zombies = null;
-    private projectiles = null;
+    private zombies = [];
+    private projectiles = [];
+    private isShooting = false;
+    
+    // MODIFICA: Memorizziamo il mouse in coordinate di "gioco"
+    private gameMouseX = 0;
+    private gameMouseY = 0;
 
     constructor(userInput: UserInput, myId: string) {
         super(userInput, myId);
+
+        addEventListener("mousedown", () => this.isShooting = true);
+        addEventListener("mouseup", () => this.isShooting = false);
+        
+        // MODIFICA: Il mousemove deve essere consapevole della scala del canvas
+        addEventListener("mousemove", (event) => {
+            const canvas = document.querySelector('canvas');
+            if (!canvas) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const screenW = canvas.width;
+            const screenH = canvas.height;
+            
+            // Calcolo scala (deve essere identico a quello nel draw)
+            const scale = Math.min(screenW / BORDERS_W, screenH / BORDERS_H);
+            
+            // Trasformazione: Pixel -> Coordinate Gioco (-2 a 2)
+            this.gameMouseX = ((event.clientX - rect.left) - screenW / 2) / scale;
+            this.gameMouseY = ((event.clientY - rect.top) - screenH / 2) / scale;
+        });
     }
+
     init(players) {
         this.players = {};
+        this.zombies = [];
+        this.projectiles = [];
         Object.keys(players).forEach(id => {
-            const player = players[id];
-            this.players[id] = {
-                ...player,
-                x: 0,
-                y: 0
-            };
+            this.players[id] = { ...players[id], x: 0, y: 0 };
         });
-        return Promise.resolve()
+        return Promise.resolve();
     }
 
     draw(ctx: CanvasRenderingContext2D, dt: number) {
@@ -161,75 +203,69 @@ export class shooterClient extends GameClient {
 
         const { screenW, screenH, moveDirectionY, moveDirectionX } = this.userInput;
 
-        // +movimento
+        // Movimento locale (Predictive)
         const me = this.players[this.myId];
-        const speed = 1.3;
-        me.x += moveDirectionX * dt * speed;
-        me.y += moveDirectionY * dt * speed;
-        if (me.x < BORDERS.left) me.x = BORDERS.left;
-            else if (me.x > BORDERS.right) me.x = BORDERS.right;
+        me.x += moveDirectionX * dt * PLAYER_SPEED;
+        me.y += moveDirectionY * dt * PLAYER_SPEED;
+        
+        // Collisioni bordi
+        me.x = Math.max(BORDERS.left, Math.min(BORDERS.right, me.x));
+        me.y = Math.max(BORDERS.top, Math.min(BORDERS.bottom, me.y));
 
-        if (me.y < BORDERS.top) me.y = BORDERS.top;
-            else if (me.y > BORDERS.bottom) me.y = BORDERS.bottom;
-        // -movimento
-
-
+        // Pulizia sfondo
         ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, screenW, screenH);
 
         ctx.save();
-        const scaleX = screenW / BORDERS_W;
-        const scaleY = screenH / BORDERS_H;
-        const scale = Math.min(scaleX, scaleY);
+        const scale = Math.min(screenW / BORDERS_W, screenH / BORDERS_H);
         ctx.translate(screenW / 2, screenH / 2); 
         ctx.scale(scale, scale);
 
+        // Erba e campo
         ctx.fillStyle = "#00820d";
         ctx.fillRect(BORDERS.left, BORDERS.top, BORDERS_W, BORDERS_H);
 
-        ctx.fillStyle = "#e1e1e1";
-        ctx.fillRect(0, -1, 0.05, 2);
-
+        // Disegno Giocatori
         Object.keys(this.players).forEach(id => {
             const player = this.players[id];
             ctx.fillStyle = id === this.myId ? "#ae0f00" : "#1d1d1d";
-            const playerSize = 0.08;
-            ctx.fillRect(player.x - playerSize / 2, player.y - playerSize / 2, playerSize, playerSize);
+            ctx.fillRect(player.x - PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
         });
 
+        // Disegno Zombie
         this.zombies.forEach(zombie => {
-            const zombieSize = 0.08
-            ctx.fillStyle = "#112fd8c0"
-            ctx.fillRect(zombie.x - zombieSize / 2, zombie.y - zombieSize / 2, zombieSize, zombieSize)
+            ctx.fillStyle = "#112fd8c0";
+            ctx.fillRect(zombie.x - ZOMBIE_SIZE / 2, zombie.y - ZOMBIE_SIZE / 2, ZOMBIE_SIZE, ZOMBIE_SIZE);
         });
 
-        /*-------------------LOGICA DISEGNO PROIETTILI----------------------
-        this.projectiles.forEach(projectile => {
-            const projectileSize = 0.04
-            ctx.fillStyle = "rgb(245, 230, 19)"
-            ctx.arc(projectile.x-projectileSize/2, projectile.y-projectileSize/2, projectileSize, projectileSize/2, projectileSize/2)
-        })
-            */
+        // MODIFICA: Disegno Proiettili (sempre, se presenti nell'array ricevuto dal server)
+        if (this.projectiles) {
+            this.projectiles.forEach(projectile => {
+                ctx.fillStyle = "rgba(248, 232, 5, 0.99)";
+                ctx.beginPath();
+                ctx.arc(projectile.x, projectile.y, PROJECTILE_SIZE / 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
         ctx.restore();
     }
+
     handleMessage(message: any) {
-         if (this.players === null) {
+        if (!this.players) {
             this.players = message.players;
-        }
-        else { // aggiorno solo la posizione degli altri giocatori
+        } else {
             Object.keys(message.players).forEach(id => {
-                const newPlayer = message.players[id];
                 if (id !== this.myId) {
-                    this.players[id].x = newPlayer.x;
-                    this.players[id].y = newPlayer.y;
+                    this.players[id].x = message.players[id].x;
+                    this.players[id].y = message.players[id].y;
                 }
             });
-
         }
         this.zombies = message.zombies;
-        addEventListener("mousedown", mouseDown, false)
-        
+        // MODIFICA: Sincronizziamo sempre i proiettili dal server
+        this.projectiles = message.projectiles;
     }
+
     flushMessages(): any[] {
         if (this.players === null) return [];
 
@@ -237,10 +273,13 @@ export class shooterClient extends GameClient {
         return [{
             kind: 'move',
             y: me.y,
-            x: me.x
+            x: me.x,
+            // MODIFICA: Invia le coordinate di gioco e lo stato del click
+            mouseX: this.gameMouseX,
+            mouseY: this.gameMouseY,
+            isShooting: this.isShooting
         }];
     }
-    isFinished(): boolean {
-        return false
-    }
+
+    isFinished(): boolean { return false; }
 }
