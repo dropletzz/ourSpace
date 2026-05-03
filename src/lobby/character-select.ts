@@ -55,7 +55,7 @@ export class CharacterSelect {
     draw(ctx: CanvasRenderingContext2D) {
         const { screenW, screenH } = this.userInput;
         const screenSide = Math.min(screenH, screenW);
-        const halfSide = 20;
+        const halfSide = 100;
 
         ctx.save();
         ctx.translate(screenW/2, screenH/2); // centra lo schermo
