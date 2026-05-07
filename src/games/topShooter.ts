@@ -9,10 +9,6 @@ const BORDERS = {
     right: 2
 }
 
-let mouseX: number = 0;
-let mouseY: number = 0;
-
-
 const BORDERS_W = Math.abs(BORDERS.right - BORDERS.left);
 const BORDERS_H = Math.abs(BORDERS.top - BORDERS.bottom);
 const SPAWN_INTERVAL = 0.5;
@@ -22,16 +18,19 @@ const PLAYER_SIZE = 0.08;
 const ZOMBIE_SIZE = 0.08;
 const PROJECTILE_RADIUS = 0.02;
 const FIRE_RATE = 0.4 
+const BOX_SIZE = 0.04
 
 export class shooterServer extends GameServer {
     private players;
     private zombies;
     private projectiles: any[] = []; // Inizializzato come array
-    private score;
+    
     private highScore;
     private orde;
     private spawnTimer;
     private shooterTimer;
+    private damage;
+    private ordeIncreaser;
     private playerMouseX: { [key: string]: number } = {};
     private playerMouseY: { [key: string]: number } = {};
     // MODIFICA: Aggiunto stato per sapere se il player sta cliccando
@@ -40,17 +39,19 @@ export class shooterServer extends GameServer {
     init(players) {
         this.players = players;
         this.projectiles = [];
-        this.score = 0;
         this.highScore = 0;
         this.orde = 10;
         this.zombies = [];
         this.spawnTimer = 0;
         this.shooterTimer = 0;
+        this.damage = 35;
+        this.ordeIncreaser = 0
 
         Object.keys(players).forEach(id => {
             const player = players[id];
             player.x = 0;
             player.y = 0;
+            player.score = 0;
             this.playerIsShooting[id] = false;
         });
     }
@@ -102,13 +103,21 @@ export class shooterServer extends GameServer {
                             y: player.y,
                             vx: (dx / distance) * 4, // Velocità X fissa
                             vy: (dy / distance) * 4, // Velocità Y fissa
-                            life: 1.5 // Il proiettile sparisce dopo 1.5 secondi
+                            life: 1.5, // Il proiettile sparisce dopo 1.5 secondi
+                            playerId: id // Traccia chi ha sparato il proiettile
                         });
                     }
                 }
             });
         }
-
+        
+        this.ordeIncreaser += dt
+        if(this.ordeIncreaser >= 10){
+            this.ordeIncreaser = 0; 
+            this.orde += 2;
+            
+            console.log("orde: " + this.orde)
+        }
         // MODIFICA: Movimento Proiettili e Pulizia
         this.projectiles.forEach(p => {
             p.x += p.vx * dt;
@@ -140,13 +149,11 @@ export class shooterServer extends GameServer {
                 }
             }
         });
-
          //gestione collisioni player zombie 
          //gestione collisione proiettile zombie
-         let collided = false 
          for(let i = this.projectiles.length -1; i>= 0; i--){
             const projectile = this.projectiles[i];
-
+            
             for(let j = this.zombies.length -1; j>=0; j--){
                 const zombie = this.zombies[j];
                 const ballRect = { 
@@ -163,14 +170,18 @@ export class shooterServer extends GameServer {
                 };
 
                 if(getCollisionSide(ballRect, zombieRect) !== 'none'){
-                    zombie.vita -= 25
+                    zombie.vita -= this.damage;
                     console.log("zombie vita: " + zombie.vita);
 
-                    this.projectiles.slice(i, 1);
+                    this.projectiles.splice(i, 1);
 
                     if(zombie.vita <= 0){
                         this.zombies.splice(j,1);
-                        this.score += 1;
+                        const shooterId = projectile.playerId;
+                        if(shooterId && this.players[shooterId]) {
+                            this.players[shooterId].score += 1;
+                            console.log("player" + shooterId + ", score: " + this.players[shooterId].score);
+                        }
                     }
 
                     break;
@@ -286,6 +297,19 @@ export class shooterClient extends GameClient {
             });
         }
         ctx.restore();
+
+        //tenere fuori dal restore la logica di disegno dello score
+
+        const myScore = this.players[this.myId].score;
+        console.log("my score:" + myScore)
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.lineWidth = 0.01;
+        ctx.font = `24px Arial`;
+        ctx.fillStyle = "#eeeeee";
+        const marginLR = 60;
+        const marginTop = 20;
+        ctx.fillText(myScore, marginLR, marginTop);
     }
 
     handleMessage(message: any) {
@@ -296,6 +320,10 @@ export class shooterClient extends GameClient {
                 if (id !== this.myId) {
                     this.players[id].x = message.players[id].x;
                     this.players[id].y = message.players[id].y;
+                    this.players[id].score = message.players[id].score;
+                } else {
+                    // Aggiorna anche il proprio score dal server
+                    this.players[id].score = message.players[id].score;
                 }
             });
         }
