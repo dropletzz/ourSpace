@@ -1289,7 +1289,7 @@ export class MicroRacingClient extends GameClient {
         ctx.fillStyle = 'rgba(255,255,255,0.12)';
         ctx.fillRect(W / 2 - 190, 168, 380, 1);
 
-        const gridRev     = [...this.gridOrder].reverse();
+        const gridRev     = [...this.gridOrder].reverse();//aura
         const tempoLeader = this.gridOrder.length > 0
             ? (this.statoServer[this.gridOrder[0]]?.migliorGiro ?? -1)
             : -1;
