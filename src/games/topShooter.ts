@@ -19,11 +19,13 @@ const ZOMBIE_SIZE = 0.08;
 const PROJECTILE_RADIUS = 0.02;
 const BOX_SIZE = 0.04;
 const BOX_INTERVAL = 10;
+const WAVE_DELAY = 5;
+
 
 export class shooterServer extends GameServer {
   private players;
   private zombies;
-  private projectiles: any[] = [];
+  private projectiles;
   private boxes;
 
   private highScore;
@@ -35,29 +37,32 @@ export class shooterServer extends GameServer {
   private playerIsShooting: { [key: string]: boolean } = {};
 
   private waveCounter;
-  private zombiesSpawned: number = 0;
+  private waveDuration;
+  private currentWaveTimer;
+
+  private isWaveActive
+  private delayTimer
 
   private boxTimer;
   private boxCounter;
 
-  private death;
-
   init(players) {
     this.players = players;
     this.projectiles = [];
-    this.highScore = 0;
-    this.orde = 10;
     this.zombies = [];
     this.spawnTimer = 0;
+    this.orde = 5;
     this.damage = 35;
-    this.waveCounter = 0;
-    this.zombiesSpawned = 0;
+
+    this.waveCounter = 1;
+    this.waveDuration = 20;
+    this.currentWaveTimer = 0;
+    this.delayTimer = 0;
+    this.isWaveActive = true;
 
     this.boxTimer = 0;
     this.boxCounter = 0;
     this.boxes = [];
-
-    this.death = false;
 
     Object.keys(players).forEach(id => {
       const player = players[id];
@@ -99,53 +104,94 @@ export class shooterServer extends GameServer {
       console.log("scatole: " + this.boxCounter);
     }
 
-    // Spawn zombie solo durante la fase di spawn dell'ondata
+
+    // --- LOGICA ONDATE E DELAY ---
+    if (this.isWaveActive) {
+      this.currentWaveTimer += dt;
+      if (this.currentWaveTimer >= this.waveDuration) {
+        this.isWaveActive = false; // Finisce l'ondata
+        this.currentWaveTimer = 0;
+        this.delayTimer = 0;
+        this.zombies =[];
+        console.log("Ondata terminata! Pausa di 5 secondi...");
+      }
+    } else {
+      this.delayTimer += dt;
+      if (this.delayTimer >= WAVE_DELAY) {
+        this.isWaveActive = true; // Inizia nuova ondata
+        this.waveCounter += 1;
+        this.waveDuration += 5;
+        this.orde += 2;
+        console.log(`Inizia Ondata ${this.waveCounter}!`);
+      }
+    }
+
+    // --- SPAWN ZOMBIE (Solo se l'ondata è attiva) ---
     this.spawnTimer += dt;
-    if (this.spawnTimer >= SPAWN_INTERVAL && this.zombiesSpawned < this.orde) {
+    if (this.isWaveActive && this.spawnTimer >= SPAWN_INTERVAL && this.zombies.length < this.orde) {
       this.spawnTimer = 0;
       const randomX = (Math.random() - 0.5) * 4;
       const randomY = (Math.random() - 0.5) * 4;
       this.zombies.push({ x: randomX, y: randomY, vita: 100 });
-      this.zombiesSpawned += 1;
     }
 
-    // Controlla se la wave è completata
-    if (this.zombiesSpawned > 0 && this.zombies.length === 0) {
-      this.orde += 2;
-      this.zombiesSpawned = 0;
-      this.waveCounter += 1;
-      console.log("Nuova ondata! Zombie totali: " + this.orde);
-      console.log("ondata num: " + this.waveCounter);
-    }
-
-    // Gestione proiettili (logica di sparo dinamica)
+    // --- Gestione proiettili ---
     Object.keys(this.players).forEach(id => {
       const player = this.players[id];
-
       player.lastShotTime += dt;
 
-      if (this.playerIsShooting[id] && player.lastShotTime >= player.fireRate) {
+      // 1. Definiamo la cadenza in base all'arma
+      let currentFireRate = player.fireRate || 0.4; // Default (0.4)
+      const wm = (player.weaponMode || '').toLowerCase();
+
+      if (wm.includes('machine')) {
+        currentFireRate = 0.1; // Molto più veloce!
+      } else if (wm.includes('shot')) {
+        currentFireRate = 0.3; // Più lenta
+      } else if (wm.includes('pistol')) {
+        currentFireRate = player.fireRate || currentFireRate;
+      }
+
+      // 2. Usiamo currentFireRate per il controllo
+      if (this.playerIsShooting[id] && player.lastShotTime >= currentFireRate) {
         player.lastShotTime = 0;
 
-        const targetX = this.playerMouseX[id];
-        const targetY = this.playerMouseY[id];
-        const dx = targetX - player.x;
-        const dy = targetY - player.y;
+        const dx = this.playerMouseX[id] - player.x;
+        const dy = this.playerMouseY[id] - player.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance > 0) {
           const dirX = dx / distance;
           const dirY = dy / distance;
 
-          if (player.weaponMode === 'pistol' || player.weaponMode === 'machineGun') {
+          // Se è shotgun, spariamo 3 proiettili a ventaglio
+          if (wm.includes('shot')) {
+            const spreadDeg = 20; // angolo totale in gradi
+            const spreadRad = (spreadDeg * Math.PI) / 180;
+            const angles = [-spreadRad / 2, 0, spreadRad / 2];
+            const pelletSpeed = 4;
+            const pelletLife = 1.0;
+            for (const a of angles) {
+              const cos = Math.cos(a);
+              const sin = Math.sin(a);
+              const rvx = dirX * cos - dirY * sin;
+              const rvy = dirX * sin + dirY * cos;
+              this.projectiles.push({
+                x: player.x,
+                y: player.y,
+                vx: rvx * pelletSpeed,
+                vy: rvy * pelletSpeed,
+                life: pelletLife,
+                playerId: id
+              });
+            }
+          } else {
+            // Creazione proiettile singolo (default)
             this.projectiles.push({
               x: player.x, y: player.y,
               vx: dirX * 4, vy: dirY * 4,
               life: 1.5, playerId: id
             });
-          }
-          else if (player.weaponMode === 'shotgun') {
-            // TODO: aggiungere i 3 proiettili a ventaglio
           }
         }
       }
@@ -260,10 +306,9 @@ export class shooterServer extends GameServer {
       }
     });
 
-     // TODO: gestione collisioni player scatola
+     //gestione collisioni player -> scatola
     Object.keys(this.players).forEach(id =>{
       const player = this.players[id];
-
       const playerRect = {
         x: player.x - PLAYER_SIZE / 2,
         y: player.y - PLAYER_SIZE / 2,
@@ -281,17 +326,41 @@ export class shooterServer extends GameServer {
         };
 
         if(getCollisionSide(playerRect, boxRect)!== 'none'){
+          const boxIndex = Math.floor(Math.random()*3);
+          this.boxCounter -= 1;
           this.boxes.splice(j, 1);
-          
+          if(boxIndex === 1){
+            player.weaponMode = 'shotgun';
+            console.log("il player ha ottenuto: "+player.weaponMode)
+          }
+          else if(boxIndex === 2){
+            player.weaponMode = 'machineGun';
+            console.log("il player ha ottenuto: "+player.weaponMode)
+          }
+          else {
+            if(player.life < 3){
+              player.life += 1;
+              console.log("il player ha ottenuto vita ")
+            }
+          }
+
+
         }
       }
     })
+    // Nel tick, aggiorniamo il return
     return [{
       payload: {
         players: this.players,
         zombies: this.zombies,
         projectiles: this.projectiles,
-        boxes: this.boxes
+        boxes: this.boxes,
+        wave: this.waveCounter,
+        isPaused: !this.isWaveActive,
+        timer: this.isWaveActive 
+          ? Math.ceil(this.waveDuration - this.currentWaveTimer) 
+          : Math.ceil(WAVE_DELAY - this.delayTimer),
+        highScore: Math.max(...Object.values(this.players).map((p: any) => p.score), 0)
       }
     }];
   }
@@ -313,6 +382,14 @@ export class shooterClient extends GameClient {
   private gameMouseX = 0;
   private gameMouseY = 0;
 
+  private currentWave = 1;
+  private waveTimer = 0;
+  private isPaused = false;
+
+  private highScore = 0;
+  private pendingGameOver = false;
+  private gameOverTimer = 0;
+  private gameOverDelay = 5; // seconds to show Game Over before signaling finish
   constructor(userInput: UserInput, myId: string) {
     super(userInput, myId);
 
@@ -346,12 +423,58 @@ export class shooterClient extends GameClient {
 
     return Promise.resolve();
   }
+  
 
   draw(ctx: CanvasRenderingContext2D, dt: number) {
     if (this.players === null) return;
 
     const { screenW, screenH, moveDirectionY, moveDirectionX } = this.userInput;
 
+    // 1. Pulizia sfondo SEMPRE (altrimenti vedi i frame precedenti sotto il nero)
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, screenW, screenH);
+
+    // 2. CONTROLLO GAME OVER
+    // Mostra la schermata di Game Over per un tempo definito prima di
+    // permettere al sistema di considerare il gioco terminato e tornare in lobby.
+    const allDead = Object.values(this.players).every((p: any) => p.life <= 0);
+    if (allDead) {
+      if (!this.pendingGameOver) {
+        this.pendingGameOver = true;
+        this.gameOverTimer = 0;
+      }
+
+      this.gameOverTimer += dt;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+      ctx.fillRect(0, 0, screenW, screenH);
+
+      ctx.fillStyle = "#ff0000";
+      ctx.font = "bold 72px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("GAME OVER", screenW / 2, screenH / 2 - 40);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "32px Arial";
+      ctx.fillText(`HIGHSCORE DI SQUADRA: ${this.highScore}`, screenW / 2, screenH / 2 + 50);
+      
+      ctx.font = "20px Arial";
+      ctx.fillText(`Il tuo score: ${this.players[this.myId].score}`, screenW / 2, screenH / 2 + 90);
+
+      // Countdown visibile al giocatore
+      ctx.font = "16px Arial";
+      const remaining = Math.max(0, Math.ceil(this.gameOverDelay - this.gameOverTimer));
+      ctx.fillText(`Torna alla lobby in: ${remaining}s`, screenW / 2, screenH / 2 + 130);
+
+      ctx.restore();
+      return;
+    } else {
+      // Reset se per qualche motivo ci fosse ancora qualcuno vivo
+      this.pendingGameOver = false;
+      this.gameOverTimer = 0;
+    }
     // Movimento locale (Predictive)
     const me = this.players[this.myId];
     me.x += moveDirectionX * dt * PLAYER_SPEED;
@@ -403,35 +526,83 @@ export class shooterClient extends GameClient {
       ctx.fillRect(boxe.x - BOX_SIZE / 2, boxe.y - BOX_SIZE / 2, BOX_SIZE, BOX_SIZE);
     });
 
+    
     ctx.restore();
 
-    // Score (fuori dal restore)
-    const myScore = this.players[this.myId].score;
-    console.log("my score:" + myScore);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.lineWidth = 0.01;
-    ctx.font = `24px Arial`;
-    ctx.fillStyle = "#eeeeee";
-    const marginLR = 60;
-    const marginTop = 20;
-    ctx.fillText(myScore, marginLR, marginTop);
+   // --- DISEGNO UI ONDATE ---
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 24px Arial";
+  ctx.textAlign = "center";
+
+  // Mostriamo il numero dell'ondata in alto al centro
+  ctx.fillText(`ONDATA ${this.currentWave}`, screenW / 2, 30);
+
+  // Mostriamo il timer e lo stato
+  if (this.isPaused) {
+    ctx.fillStyle = "#ffcc00"; // Colore arancione/giallo per la pausa
+    ctx.font = "20px Arial";
+    ctx.fillText(`PROSSIMA ONDATA IN: ${this.waveTimer}s`, screenW / 2, 60);
+    
+    // Testo centrale opzionale per avvisare il giocatore
+    ctx.font = "bold 40px Arial";
+    ctx.fillText("PREPARATI!", screenW / 2, screenH / 2 - 50);
+  } else {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "18px Arial";
+    ctx.fillText(`TEMPO RIMASTO: ${this.waveTimer}s`, screenW / 2, 60);
+  }
+
+  
+
+  // --- SCORE (Il tuo codice esistente) ---
+  const myScore = this.players[this.myId].score;
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#eeeeee";
+  ctx.fillText(`SCORE: ${myScore}`, screenW - 20, 30);
   }
 
   handleMessage(message: any) {
     if (!this.players) {
-      this.players = message.players;
-    } else {
+      // Prima volta: copiamo lo stato completo dei player
+      this.players = {};
       Object.keys(message.players).forEach(id => {
+        this.players[id] = { ...message.players[id] };
+      });
+    } else {
+      // Aggiorniamo lo stato ricevuto dal server.
+      // Manteniamo la posizione locale del giocatore corrente (prediction),
+      // ma sincronizziamo il resto (score, life, ecc.) per mostrare Game Over.
+      Object.keys(message.players).forEach(id => {
+        if (!this.players[id]) {
+          this.players[id] = { ...message.players[id] };
+          return;
+        }
+
         if (id !== this.myId) {
           this.players[id].x = message.players[id].x;
           this.players[id].y = message.players[id].y;
-          this.players[id].score = message.players[id].score;
-        } else {
-          this.players[id].score = message.players[id].score;
+        }
+
+        // Manteniamo sempre score e vita aggiornati dal server
+        this.players[id].score = message.players[id].score;
+        this.players[id].life = message.players[id].life;
+
+        // Sincronizziamo anche eventuali altri campi utili
+        if (message.players[id].weaponMode !== undefined) {
+          this.players[id].weaponMode = message.players[id].weaponMode;
         }
       });
     }
+
+    this.zombies = message.zombies;
+    this.projectiles = message.projectiles;
+    this.boxes = message.boxes;
+    this.highScore = message.highScore;
+
+    // Salviamo i dati dell'ondata
+    this.currentWave = message.wave;
+    this.waveTimer = message.timer;
+    this.isPaused = message.isPaused;
 
     this.zombies = message.zombies;
     this.projectiles = message.projectiles;
@@ -453,7 +624,9 @@ export class shooterClient extends GameClient {
   }
 
   isFinished(): boolean {
-    const me = this.players[this.myId];
-    return me && me.life <= 0;
+    if (!this.players) return false;
+    // Il gioco verrà considerato finito SOLO dopo che il client avrà
+    // mostrato la schermata di Game Over per il tempo configurato.
+    return this.pendingGameOver && this.gameOverTimer >= this.gameOverDelay;
   }
 }
