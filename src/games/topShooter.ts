@@ -205,13 +205,15 @@ export class shooterServer extends GameServer {
     });
     this.projectiles = this.projectiles.filter(p => p.life > 0);
 
-    // Movimento zombie verso il giocatore più vicino
-    this.zombies.forEach(zombie => {
+   // --- MOVIMENTO ZOMBIE CON SEPARAZIONE ---
+    this.zombies.forEach((zombie, index) => {
       let closestPlayer = null;
       let minDistance = Infinity;
 
+      // 1. Trova il giocatore più vicino
       Object.keys(this.players).forEach(id => {
         const player = this.players[id];
+        if (player.life <= 0) return; // Ignora i player morti
         const dx = player.x - zombie.x;
         const dy = player.y - zombie.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -221,15 +223,41 @@ export class shooterServer extends GameServer {
         }
       });
 
+      let moveX = 0;
+      let moveY = 0;
+
+      // 2. Calcola direzione verso il player
       if (closestPlayer) {
         const dx = closestPlayer.x - zombie.x;
         const dy = closestPlayer.y - zombie.y;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len > 0) {
-          zombie.x += (dx / len) * ZOMBIE_SPEED * dt;
-          zombie.y += (dy / len) * ZOMBIE_SPEED * dt;
+          moveX += (dx / len) * ZOMBIE_SPEED;
+          moveY += (dy / len) * ZOMBIE_SPEED;
         }
       }
+
+      // 3. LOGICA DI SEPARAZIONE (Evita sovrapposizioni)
+      const SEPARATION_DIST = ZOMBIE_SIZE * 1.2; // Distanza minima tra zombie
+      const SEPARATION_FORCE = 0.8; // Forza dell'allontanamento
+
+      this.zombies.forEach((otherZombie, otherIndex) => {
+        if (index === otherIndex) return; // Non controllare se stesso
+
+        const dx = zombie.x - otherZombie.x;
+        const dy = zombie.y - otherZombie.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < SEPARATION_DIST && dist > 0) {
+          // Spinge lo zombie nella direzione opposta all'altro zombie
+          moveX += (dx / dist) * SEPARATION_FORCE;
+          moveY += (dy / dist) * SEPARATION_FORCE;
+        }
+      });
+
+      // 4. Applica il movimento finale
+      zombie.x += moveX * dt;
+      zombie.y += moveY * dt;
     });
 
    
