@@ -462,55 +462,21 @@ export class shooterClient extends GameClient {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, screenW, screenH);
 
-    // 2. CONTROLLO GAME OVER
-    // Mostra la schermata di Game Over per un tempo definito prima di
-    // permettere al sistema di considerare il gioco terminato e tornare in lobby.
-    const allDead = Object.values(this.players).every((p: any) => p.life <= 0);
-    if (allDead) {
-      if (!this.pendingGameOver) {
-        this.pendingGameOver = true;
-        this.gameOverTimer = 0;
-      }
+    // Nota: il Game Over è gestito per singolo giocatore più in basso,
+    // in modo che i giocatori morti vedano l'overlay mentre gli altri continuano.
+    // Movimento locale (Predictive) — solo se vivo
+    const me = this.players[this.myId];
+    if (me && me.life > 0) {
+      me.x += moveDirectionX * dt * PLAYER_SPEED;
+      me.y += moveDirectionY * dt * PLAYER_SPEED;
 
-      this.gameOverTimer += dt;
-
-      ctx.save();
-      ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-      ctx.fillRect(0, 0, screenW, screenH);
-
-      ctx.fillStyle = "#ff0000";
-      ctx.font = "bold 72px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("GAME OVER", screenW / 2, screenH / 2 - 40);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "32px Arial";
-      ctx.fillText(`HIGHSCORE DI SQUADRA: ${this.highScore}`, screenW / 2, screenH / 2 + 50);
-      
-      ctx.font = "20px Arial";
-      ctx.fillText(`Il tuo score: ${this.players[this.myId].score}`, screenW / 2, screenH / 2 + 90);
-
-      // Countdown visibile al giocatore
-      ctx.font = "16px Arial";
-      const remaining = Math.max(0, Math.ceil(this.gameOverDelay - this.gameOverTimer));
-      ctx.fillText(`Torna alla lobby in: ${remaining}s`, screenW / 2, screenH / 2 + 130);
-
-      ctx.restore();
-      return;
-    } else {
-      // Reset se per qualche motivo ci fosse ancora qualcuno vivo
+      // Collisioni bordi
+      me.x = Math.max(BORDERS.left, Math.min(BORDERS.right, me.x));
+      me.y = Math.max(BORDERS.top, Math.min(BORDERS.bottom, me.y));
+      // assicurati che il gioco non mostri il Game Over se sei ancora vivo
       this.pendingGameOver = false;
       this.gameOverTimer = 0;
     }
-    // Movimento locale (Predictive)
-    const me = this.players[this.myId];
-    me.x += moveDirectionX * dt * PLAYER_SPEED;
-    me.y += moveDirectionY * dt * PLAYER_SPEED;
-
-    // Collisioni bordi
-    me.x = Math.max(BORDERS.left, Math.min(BORDERS.right, me.x));
-    me.y = Math.max(BORDERS.top, Math.min(BORDERS.bottom, me.y));
 
     // Pulizia sfondo
     ctx.fillStyle = "#000000";
@@ -528,6 +494,8 @@ export class shooterClient extends GameClient {
     // Disegno giocatori
     Object.keys(this.players).forEach(id => {
       const player = this.players[id];
+      // Non disegnare giocatori morti
+      if (!player || player.life <= 0) return;
       ctx.fillStyle = id === this.myId ? "#ae0f00" : "#1d1d1d";
       ctx.fillRect(player.x - PLAYER_SIZE / 2, player.y - PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
     });
@@ -587,6 +555,39 @@ export class shooterClient extends GameClient {
   ctx.textAlign = "right";
   ctx.fillStyle = "#eeeeee";
   ctx.fillText(`SCORE: ${myScore}`, screenW - 20, 30);
+
+  // Se il giocatore locale è morto, mostriamo l'overlay Game Over (senza fermare il server)
+  if (me && me.life <= 0) {
+    if (!this.pendingGameOver) {
+      this.pendingGameOver = true;
+      this.gameOverTimer = 0;
+    }
+
+    this.gameOverTimer += dt;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(0, 0, screenW, screenH);
+
+    ctx.fillStyle = "#ff0000";
+    ctx.font = "bold 72px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("GAME OVER", screenW / 2, screenH / 2 - 40);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "32px Arial";
+    ctx.fillText(`HIGHSCORE DI SQUADRA: ${this.highScore}`, screenW / 2, screenH / 2 + 50);
+    
+    ctx.font = "20px Arial";
+    ctx.fillText(`Il tuo score: ${me.score || 0}`, screenW / 2, screenH / 2 + 90);
+
+    ctx.font = "16px Arial";
+    const remaining = Math.max(0, Math.ceil(this.gameOverDelay - this.gameOverTimer));
+    ctx.fillText(`Torna alla lobby in: ${remaining}s`, screenW / 2, screenH / 2 + 130);
+
+    ctx.restore();
+  }
   }
 
   handleMessage(message: any) {
@@ -641,6 +642,9 @@ export class shooterClient extends GameClient {
     if (this.players === null) return [];
 
     const me = this.players[this.myId];
+    // Se siamo morti, non inviamo più input di gioco al server
+    if (!me || me.life <= 0) return [];
+
     return [{
       kind: 'move',
       y: me.y,
