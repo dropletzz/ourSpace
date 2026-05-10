@@ -17,11 +17,12 @@ const PLAYER_SPEED = 1.3;
 const PLAYER_SIZE = 0.2;
 const ZOMBIE_SIZE = 0.2;
 const PROJECTILE_RADIUS = 0.02;
-const BOX_SIZE = 0.04;
+const BOX_SIZE = 0.1;
 const BOX_INTERVAL = 10;
 const WAVE_DELAY = 5;
 
 
+const FLASK_SIZE = 0.1;
 
 
 export class shooterServer extends GameServer {
@@ -470,6 +471,8 @@ export class shooterClient extends GameClient {
 
     await this.assets.loadImage('zombie', `${folder}/zombie-walk.png`);
     await this.assets.loadImage('player', `${folder}/Walk.png`);
+    await this.assets.loadImage('box', `${folder}/box.png`);
+    await this.assets.loadImage('life', `${folder}/flask.png`)
 
     return Promise.resolve();
   }
@@ -675,17 +678,14 @@ export class shooterClient extends GameClient {
     // =========================================================
 
     this.boxes.forEach(boxe => {
-
-      ctx.fillStyle = "rgba(163, 98, 0, 0.82)";
-
-      ctx.fillRect(
+      ctx.drawImage(
+        this.assets.images.box,
         boxe.x - BOX_SIZE / 2,
         boxe.y - BOX_SIZE / 2,
         BOX_SIZE,
         BOX_SIZE
       );
     });
-
     ctx.restore();
 
     // =========================================================
@@ -744,6 +744,29 @@ export class shooterClient extends GameClient {
       30
     );
 
+    // LIFE TODO: SITEMARE
+    const myLife = this.players[this.myId].life
+    const fx = screenW -170;
+    const fy = screenH - 70;
+
+    ctx.drawImage(
+      this.assets.images.life,
+      fx,
+      fy,
+      FLASK_SIZE,
+      FLASK_SIZE,
+    )
+
+    ctx.fillStyle = "#da2323";
+    ctx.font = "bold 28px Arial";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+
+    ctx.fillText(
+      `x${myLife}`,
+      fx + 50,
+      fy + FLASK_SIZE / 2
+    );
     // =========================================================
     // GAME OVER
     // =========================================================
