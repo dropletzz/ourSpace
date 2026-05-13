@@ -1,4 +1,4 @@
-import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide } from '../common';
+import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, EPSILON } from '../common';
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { Button } from '../client/ui-elements';
@@ -110,9 +110,6 @@ type LobbyClientMsg =
     | ClientStartGameMsg
     | GameMsg;
 // -messaggi
-
-
-const EPSILON = 0.0001;
 
 const worldW = 10000, worldH = 7000;
 
@@ -543,9 +540,9 @@ export class LobbyClient {
         ctx.fillStyle = "#58a515";
         ctx.fill();
 
-        // disegna gli edifici
+        // disegna l'interno degli edifici
         for (const building of buildings) {
-            building.draw(ctx);
+            building.draw(ctx, dt);
         }
 
         // sposta le persone e disegnale
@@ -559,6 +556,11 @@ export class LobbyClient {
             drawPerson(ctx, person.x, person.y, PERSON_W, PERSON_H, );
             drawPersonName(ctx, person);
         });
+
+        // disegna l'esterno degli edifici
+        for (const building of buildings) {
+            building.drawFront(ctx);
+        }
 
         ctx.restore();
         
