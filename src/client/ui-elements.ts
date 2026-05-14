@@ -34,8 +34,9 @@ export abstract class ClickableRectangle {
         const canvasMouseY = rawY * scaleY;
 
         const mousePoint = new DOMPoint(canvasMouseX, canvasMouseY);
-        const invertedMatrix = this.transformMatrix.inverse();
-        const localPoint = mousePoint.matrixTransform(invertedMatrix);
+        const localPoint = this.transformMatrix
+            ? mousePoint.matrixTransform(this.transformMatrix.inverse())
+            : mousePoint;
 
         const rect = this.rect;
         return localPoint.x >= rect.x && localPoint.x <= rect.x + rect.w &&
@@ -101,7 +102,7 @@ export class Button extends ClickableRectangle {
 
         // testo
         ctx.fillStyle = textColor;
-        ctx.font = `bold ${Math.floor(Math.min(w, h) * 0.5)}px Arial`;
+        ctx.font = `bold ${Math.min(w, h) * 0.5}px Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(this.text, x + w / 2 + pushOffset, y + h / 2 + pushOffset);
@@ -122,13 +123,15 @@ export class TextInput extends ClickableRectangle {
     private text: string;
     private isFocused: boolean;
     private placeholder: string;
+    private maxLength: number | null;
 
-    constructor(userInput: UserInput, placeholder: string = "") {
+    constructor(userInput: UserInput, placeholder: string = "", maxLength: number | null = null) {
         super(userInput, EMPTY_FUNCTION);
 
         this.text = "";
         this.isFocused = false;
         this.placeholder = placeholder;
+        this.maxLength = maxLength;
 
         document.addEventListener('keydown', (e) => {
             if (!this.isFocused) return;
@@ -136,7 +139,8 @@ export class TextInput extends ClickableRectangle {
             if (e.key === "Backspace") {
                 this.text = this.text.slice(0, -1);
             } else if (e.key.length === 1) {
-                this.text += e.key;
+                if (this.maxLength === null || this.text.length < this.maxLength)
+                    this.text += e.key;
             }
         });
     }
@@ -147,29 +151,11 @@ export class TextInput extends ClickableRectangle {
 
     onPointerUp(e: PointerEvent) {}
 
-    isInside(e: PointerEvent) {
-        const { canvas, screenW, screenH } = this.userInput;
-        const bounds = canvas.getBoundingClientRect();
-        const pos = {
-            x: e.clientX - bounds.left - screenW/2,
-            y: e.clientY - bounds.top - screenH/2
-        };
-        const rect = this.rect;
-        return pos.x >= rect.x && pos.x <= rect.x + rect.w &&
-               pos.y >= rect.y && pos.y <= rect.y + rect.h;
-    }
-
     draw(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
         this.updateRectangle(ctx, x, y, w, h);
+        const leftPadding = w * 0.01;
 
-        const leftPadding = 10;
-
-        // +sfondo
-        ctx.beginPath();
-        ctx.rect(x, y, w, h);
-        ctx.fillStyle = "#eeeeee";
-        ctx.fill();
-        // -sfondo
+        ctx.save();
 
         // +bordi
         const borderThickness = Math.min(h, w) * 0.1;
@@ -182,15 +168,23 @@ export class TextInput extends ClickableRectangle {
         ctx.fill();
         // -bordi
 
+        // +sfondo
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+        ctx.fillStyle = "#eeeeee";
+        ctx.fill();
+        // -sfondo
+
         // +testo
-        ctx.font = `${Math.floor(h * 0.5)}px Arial`;
+        ctx.font = `${h * 0.5}px Arial`;
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
 
         if (this.text.length > 0) {
             ctx.fillStyle = "#161616";
             ctx.fillText(this.text, x + leftPadding, y + h / 2);
-        } else {
+        } else if (!this.isFocused) {
             ctx.fillStyle = "#555555";
             ctx.fillText(this.placeholder, x + leftPadding, y + h / 2);
         }
@@ -200,17 +194,19 @@ export class TextInput extends ClickableRectangle {
         if (this.isFocused) {
             if (Math.floor(Date.now() / 500) % 2 === 0) {
                 const textWidth = ctx.measureText(this.text.length > 0 ? this.text : "").width;
-                const cursorX = x + leftPadding + textWidth + 2;
+                const cursorX = x + leftPadding + textWidth + h*0.1; // xdsff
                 
                 ctx.beginPath();
                 ctx.moveTo(cursorX, y + h * 0.2);
                 ctx.lineTo(cursorX, y + h * 0.8);
-                ctx.lineWidth = 2;
+                ctx.lineWidth = h * 0.07;
                 ctx.strokeStyle = "#161616";
                 ctx.stroke();
             }
         }
         // -cursore
+
+        ctx.restore();
     }
 
     getValue(): string {
