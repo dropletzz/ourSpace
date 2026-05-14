@@ -7,6 +7,7 @@ import { BrawlClient , BrawlServer } from "./brawl";
 import { MicroRacingClient, MicroRacingServer } from "./micro-racing";
 import { MinecraftDiamondRushClient, MinecraftDiamondRushServer } from "./minecraft2d";
 import { DoomGameClient, DoomGameServer } from "./doom";
+import { FortniteClient, FortniteServer } from "./fortnite/fortnite";
 
 export type GameInfo = {
     client: new (userInput: UserInput, myId: string) => GameClient;
@@ -58,6 +59,13 @@ export const GAMES: Record<string, GameInfo> = {
         client: DoomGameClient,
         server: DoomGameServer,
         name: 'Doom',
+        minPlayers: 1,
+        maxPlayers: 99
+    },
+    fortnite: {
+        client: FortniteClient,
+        server: FortniteServer,
+        name: 'Fortnite',
         minPlayers: 1,
         maxPlayers: 99
     }
