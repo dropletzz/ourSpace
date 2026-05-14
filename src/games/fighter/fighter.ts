@@ -305,7 +305,7 @@ export interface FighterPlayer {
     lastMoveTapFrame: Record<string, number>;
 
     // Animation & Input
-    currentAnimationFrame: number;
+    frame: number;
     animationTimer: number;
     attackTimer: number;
     damageFlashTimer: number;
@@ -505,7 +505,7 @@ function initializeFighterPlayer(id: string, playerBase: Player, isPlayer1: bool
         wasDodgePressed: false,
         lastMoveTapFrame: {},
 
-        currentAnimationFrame: 0,
+        frame: 0,
         animationTimer: 0,
         attackTimer: 0,
         damageFlashTimer: 0,
@@ -1346,8 +1346,8 @@ export class FighterClient extends GameClient {
         this.animations[player.id] = animation;
         animation.setState(player.state);
         animation.flipSprite(player.facingRight ? 'right' : 'left');
-        animation.updateAnimation(dt);
-        player.currentAnimationFrame = animation.currentAnimationFrame;
+        animation.update(dt);
+        player.frame = animation.frame;
 
         ctx.save();
 
@@ -1366,17 +1366,17 @@ export class FighterClient extends GameClient {
         ctx.translate(characterCenterX, characterCenterY);
         if (!player.facingRight) ctx.scale(-1, 1);
         const flash = player.damageFlashTimer > 0 && Math.floor(player.damageFlashTimer / 2) % 2 === 0;
-        const alpha = animation.poseData?.opacity ?? 1;
+        const alpha = animation.pose?.opacity ?? 1;
         ctx.globalAlpha = alpha;
 
         // Apply animation pose transformations
-        if (animation.poseData) {
-            const pose = animation.poseData;
+        if (animation.pose) {
+            const pose = animation.pose;
             ctx.rotate((pose.bodyTilt * Math.PI) / 180 * 0.3);
         }
 
         drawPerson(ctx, 0, 0, PLAYER_W, characterH, flash ? { skinColor: '#ffffff', magicColor: '#ffffff' } : {});
-        this.drawPoseEffects(ctx, player, animation.poseData);
+        this.drawPoseEffects(ctx, player, animation.pose);
         ctx.restore();
 
         ctx.save();
@@ -1401,15 +1401,15 @@ export class FighterClient extends GameClient {
         ctx.restore();
     }
 
-    private drawPoseEffects(ctx: CanvasRenderingContext2D, player: FighterPlayer, poseData?: any): void {
+    private drawPoseEffects(ctx: CanvasRenderingContext2D, player: FighterPlayer, pose?: any): void {
         if (player.state === 'ATTACKING_LIGHT') {
             ctx.fillStyle = '#f1c40f';
-            const direction = poseData?.armSide === 'front' ? 1 : -1;
+            const direction = pose?.armSide === 'front' ? 1 : -1;
             ctx.fillRect(PLAYER_W * (0.2 + direction * 0.3), -PLAYER_H * 0.2, PLAYER_W * 0.5, PLAYER_H * 0.08);
         }
         if (player.state === 'ATTACKING_HEAVY' || player.state === 'SPECIAL') {
             ctx.fillStyle = '#e74c3c';
-            const direction = poseData?.armSide === 'front' ? 1 : -1;
+            const direction = pose?.armSide === 'front' ? 1 : -1;
             ctx.fillRect(PLAYER_W * (0.15 + direction * 0.4), -PLAYER_H * 0.24, PLAYER_W * 0.7, PLAYER_H * 0.12);
         }
         if (player.state === 'ATTACKING_SWEEP') {
@@ -1418,7 +1418,7 @@ export class FighterClient extends GameClient {
         }
         if (player.state === 'ATTACKING_AERIAL') {
             ctx.fillStyle = '#3498db';
-            const direction = poseData?.armSide === 'front' ? 1 : -1;
+            const direction = pose?.armSide === 'front' ? 1 : -1;
             ctx.fillRect(PLAYER_W * (0.1 + direction * 0.25), -PLAYER_H * 0.3, PLAYER_W * 0.4, PLAYER_H * 0.1);
         }
         if (player.state === 'CHARGING') {
