@@ -19,13 +19,22 @@ const PLAYER_SPEED = 1.6; // units/sec for local smoothing
 const PROJ_W = 0.01;
 const PROJ_H = 0.03;
 const PLAYER_PROJECTILE_SPEED = -1.8; // negative = up
-const ENEMY_PROJECTILE_SPEED = 1.6; // downwards, increased for difficulty
+// Base enemy projectile speed; will be scaled by `difficulty` per wave
+const ENEMY_PROJECTILE_SPEED = 1.9;
 
-const HEAT_PER_SHOT = 15;
-const HEAT_DISSIPATION_RATE = 20; // units/sec
-const OVERHEAT_DURATION_MS = 3000;
-const SHIELD_DURATION_MS = 1500;
-const SHIELD_COOLDOWN_MS = 5000;
+// Make sustained firing slightly more costly for players (harder to spam)
+const HEAT_PER_SHOT = 12;
+// Increase dissipation so players recover heat faster between bursts
+const HEAT_DISSIPATION_RATE = 22; // units/sec
+// Shorter overheat penalty so gameplay feels snappier
+const OVERHEAT_DURATION_MS = 1500;
+// Shrink shields a bit and increase cooldown to make them less dominant
+const SHIELD_DURATION_MS = 900;
+// Reduced cooldown so shields are more usable during play
+const SHIELD_COOLDOWN_MS = 3000;
+
+// Maximum number of active players allowed in a game instance
+const MAX_ACTIVE_PLAYERS = 2;
 
 type EnemyType = 'PENDULUM' | 'JUMPER' | 'DIVER';
 
@@ -43,6 +52,7 @@ type EnemyState = {
   lastJumpAt?: number; direction?: number; jumpIntervalMs?: number;
   // diver
   idleStartAt?: number; diving?: boolean; diveStartDelayMs?: number; diveSpeed?: number; visible?: boolean; lastBlinkAt?: number; blinkMs?: number;
+  hp?: number;
   alive?: boolean;
 }
 
@@ -74,96 +84,120 @@ export class SpaceServer extends GameServer {
   private playerState: Record<string, PlayerRuntimeState> = {};
   private projectiles: ProjectileState[] = [];
   private enemies: EnemyState[] = [];
-  private respawnQueue: { type: EnemyType; respawnAt: number }[] = [];
+  private respawnQueue: { type?: EnemyType; respawnAt: number }[] = [];
   private nextEnemyId: number = 1;
+  private waveNumber: number = 1;
+  // Increase starting lives per request
   private lives: number = 5;
+  private teamScore: number = 0;
+  // Track which player IDs are active in the current game (others are spectators)
+  private activePlayerIds: Set<string> = new Set();
 
   init(players) {
     this.players = players;
     this.projectiles = [];
     this.enemies = [];
+    // start with 5 lives per request
     this.lives = 5;
+    this.teamScore = 0;
 
-    // Initialize player positions and runtime state
-    let i = 0;
-    Object.keys(players).forEach(id => {
+    // Initialize player positions and runtime state for up to MAX_ACTIVE_PLAYERS.
+    // Additional connected clients are marked as spectators and kept out of
+    // authoritative gameplay (they won't affect physics or receive input handling).
+    this.activePlayerIds = new Set();
+    const ids = Object.keys(players || {});
+    let assigned = 0;
+    for (const id of ids) {
       const p = players[id];
-      p.x = (i % 2 === 0) ? -0.4 : 0.4; // left / right start
-      p.y = 0.9; // bottom area
-      p.w = PLAYER_W; p.h = PLAYER_H;
-      // give the second connected player a different color for easy distinction
-      p.color = (i % 2 === 0) ? '#88ff88' : '#88ccff';
-      // initialize score for players
-      p.score = 0;
-
-      this.playerState[id] = {
-        heat: 0,
-        isOverheated: false,
-        overheatedUntil: 0,
-        lastShotAt: 0,
-        shieldExpiresAt: 0,
-        shieldCooldownUntil: 0,
-        powerups: {}
-      };
-      i += 1;
-    });
-
-    // spawn an initial predictable wave (rows determine enemy types)
-    this.spawnInitialWave(3, 7);
-  }
-
-  private spawnInitialWave(rows: number, cols: number){
-    const startX = -0.9;
-    const spacingX = 1.8 / Math.max(6, cols - 1);
-    const startY = -0.8;
-    const spacingY = 0.14;
-
-    for(let r=0;r<rows;r++){
-      for(let c=0;c<cols;c++){
-        let type: EnemyType = 'PENDULUM';
-        if (r === 1) type = 'JUMPER';
-        if (r === 2) type = 'DIVER';
-
-        const ex = startX + c * spacingX;
-        const ey = startY + r * spacingY;
-        const e: EnemyState = {
-          id: this.nextEnemyId++,
-          type,
-          x: ex,
-          y: ey,
-          w: 0.10,
-          h: 0.06,
-          alive: true
+      if (assigned < MAX_ACTIVE_PLAYERS) {
+        // active player
+        this.activePlayerIds.add(id);
+        p.x = (assigned % 2 === 0) ? -0.4 : 0.4; // left / right start
+        p.y = 0.9; // bottom area
+        p.w = PLAYER_W; p.h = PLAYER_H;
+        p.color = (assigned % 2 === 0) ? '#88ff88' : '#88ccff';
+        p.score = 0;
+        this.playerState[id] = {
+          heat: 0,
+          isOverheated: false,
+          overheatedUntil: 0,
+          lastShotAt: 0,
+          shieldExpiresAt: 0,
+          shieldCooldownUntil: 0,
+          powerups: {}
         };
-
-        if (type === 'PENDULUM'){
-          // faster pendulum movement and wider amplitude/frequency for challenge
-          e.vx = 0.35 * (Math.random() < 0.5 ? 1 : -1);
-          e.baseY = ey;
-          e.amplitude = 0.10 + Math.random()*0.06;
-          e.frequency = 3 + Math.random()*2;
-          e.phase = Math.random()*Math.PI*2;
-          e.lastPeakFireAt = 0;
-        } else if (type === 'JUMPER'){
-          // quicker jumps and larger steps
-          e.jumpIntervalMs = 1200;
-          e.lastJumpAt = Date.now() + Math.random()*e.jumpIntervalMs;
-          e.direction = Math.random() < 0.5 ? -1 : 1;
-        } else if (type === 'DIVER'){
-          // quicker dive trigger and faster dive speed
-          e.diving = false;
-          e.idleStartAt = 0;
-          e.diveStartDelayMs = 2500;
-          e.blinkMs = 250;
-          e.lastBlinkAt = Date.now();
-          e.visible = true;
-          e.diveSpeed = 4.2;
-        }
-
-        this.enemies.push(e);
+        p.isSpectator = false;
+        assigned += 1;
+      } else {
+        // spectator: mark and move off-screen so client won't draw them inside the playfield
+        p.isSpectator = true;
+        p.x = 0; p.y = 2; p.w = PLAYER_W; p.h = PLAYER_H;
+        p.color = '#666666';
+        p.score = p.score || 0;
       }
     }
+
+      // spawn an initial wave (types chosen randomly)
+      this.waveNumber = 1;
+      this.spawnInitialWave(3, 7);
   }
+
+    private spawnInitialWave(rows: number, cols: number){
+      // increase wave density slowly as waves progress
+      // increase density slightly faster so more enemies appear throughout the game
+      const extra = Math.floor((this.waveNumber - 1) / 1);
+      const actualRows = Math.min(8, rows + extra + 1);
+      const actualCols = Math.min(12, cols + extra + 1);
+      const startX = -0.9;
+      const spacingX = 1.8 / Math.max(6, actualCols - 1);
+      const startY = -0.8;
+      const spacingY = 0.14;
+
+      const difficulty = Math.pow(1.18, Math.max(0, this.waveNumber - 1));
+      const baseHp = 1 + Math.floor((this.waveNumber - 1) / 2);
+
+      for(let r=0;r<actualRows;r++){
+        for(let c=0;c<actualCols;c++){
+          const type = this.randomEnemyType();
+
+          const ex = startX + c * spacingX + (Math.random()*0.02 - 0.01);
+          const ey = startY + r * spacingY + (Math.random()*0.02 - 0.01);
+          const e: EnemyState = {
+            id: this.nextEnemyId++,
+            type,
+            x: ex,
+            y: ey,
+            w: 0.10,
+            h: 0.06,
+            hp: baseHp,
+            alive: true
+          };
+
+          if (type === 'PENDULUM'){
+            e.vx = (0.25 + Math.random()*0.2) * (Math.random() < 0.5 ? 1 : -1) * difficulty;
+            e.baseY = ey;
+            e.amplitude = (0.08 + Math.random()*0.06) * (1 + 0.08*(this.waveNumber-1));
+            e.frequency = (2 + Math.random()*2) * (1 + 0.06*(this.waveNumber-1));
+            e.phase = Math.random()*Math.PI*2;
+            e.lastPeakFireAt = 0;
+          } else if (type === 'JUMPER'){
+            e.jumpIntervalMs = Math.max(350, Math.floor(1200 / difficulty) + Math.floor(Math.random()*400));
+            e.lastJumpAt = Date.now() + Math.random()*e.jumpIntervalMs;
+            e.direction = Math.random() < 0.5 ? -1 : 1;
+          } else if (type === 'DIVER'){
+            e.diving = false;
+            e.idleStartAt = 0;
+            e.diveStartDelayMs = Math.max(600, Math.floor(2200 / difficulty) + Math.floor(Math.random()*800));
+            e.blinkMs = 150 + Math.floor(Math.random()*200);
+            e.lastBlinkAt = Date.now();
+            e.visible = true;
+            e.diveSpeed = (3.2 + Math.random()*1.6) * difficulty;
+          }
+
+          this.enemies.push(e);
+        }
+      }
+    }
 
   tick(incomingMessages: IncomingMsg[], dt: number): OutgoingMsg[] {
     const now = Date.now();
@@ -172,7 +206,10 @@ export class SpaceServer extends GameServer {
     incomingMessages.forEach(m => {
       const id = m.clientId;
       const payload = m.payload;
-      if (!this.players[id]) return;
+      const p = this.players[id];
+      if (!p) return;
+      // ignore inputs from spectators
+      if (p.isSpectator) return;
 
       if (payload.kind === 'move'){
         // authoritative player x from client
@@ -189,9 +226,9 @@ export class SpaceServer extends GameServer {
       const st = this.playerState[id];
       if (!st) return;
       // if last shot not recent, dissipate heat
-      const firingRecently = (Date.now() - st.lastShotAt) < 250;
+      const firingRecently = (now - st.lastShotAt) < 250;
       if (!firingRecently) st.heat = Math.max(0, st.heat - HEAT_DISSIPATION_RATE * dt);
-      if (st.isOverheated && Date.now() >= st.overheatedUntil){
+      if (st.isOverheated && now >= st.overheatedUntil){
         st.isOverheated = false;
         st.heat = Math.min(100, 60);
       }
@@ -200,47 +237,67 @@ export class SpaceServer extends GameServer {
     // Update enemies
     this.updateEnemies(dt, now);
 
-    // Update projectiles
-    for(const pr of this.projectiles) {
+    // Update projectiles (move)
+    for (const pr of this.projectiles) {
       if (!pr.alive) continue;
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
     }
 
-    // Collisions: player projectiles -> enemies
-    for(const pr of this.projectiles){
+    // Collision detection with swept AABB to prevent fast projectiles from
+    // passing through thin enemies between ticks. This keeps logic simple
+    // and follows the same straightforward style used in multi-pong.
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const pr = this.projectiles[i];
       if (!pr.alive) continue;
-      if (pr.owner === 'player'){
-        for(const en of this.enemies){
+
+      const prevX = pr.x - pr.vx * dt;
+      const prevY = pr.y - pr.vy * dt;
+      const left = Math.min(prevX - pr.w/2, pr.x - pr.w/2);
+      const top = Math.min(prevY - pr.h/2, pr.y - pr.h/2);
+      const right = Math.max(prevX + pr.w/2, pr.x + pr.w/2);
+      const bottom = Math.max(prevY + pr.h/2, pr.y + pr.h/2);
+      const swept = { x: left, y: top, w: right - left, h: bottom - top };
+
+      if (pr.owner === 'player') {
+        for (let j = this.enemies.length - 1; j >= 0; j--) {
+          const en = this.enemies[j];
           if (!en.alive) continue;
-          if (aabbCollision({x: pr.x - pr.w/2, y: pr.y - pr.h/2, w: pr.w, h: pr.h}, {x: en.x, y: en.y, w: en.w, h: en.h})){
+          if (aabbCollision(swept, { x: en.x, y: en.y, w: en.w, h: en.h })) {
             pr.alive = false;
-            en.alive = false;
-            // award score to shooter if known
-            if ((pr as any).ownerId && this.players[(pr as any).ownerId]){
-              const shooter = this.players[(pr as any).ownerId];
-              shooter.score = (shooter.score || 0) + 1;
+            // decrement enemy HP; only kill when hp <= 0 (makes enemies require multiple hits)
+            en.hp = (en.hp || 1) - 1;
+            if (en.hp <= 0) {
+              en.alive = false;
+              // award score to shooter if known (per-player stat)
+              if ((pr as any).ownerId && this.players[(pr as any).ownerId]) {
+                const shooter = this.players[(pr as any).ownerId];
+                shooter.score = (shooter.score || 0) + 1;
+              }
+              // increment common/team score
+              this.teamScore += 1;
+              // schedule a respawn (type chosen randomly at respawn time) — respawn faster on later waves
+              const respawnDelay = Math.max(700, 1500 - (this.waveNumber - 1) * 150) + Math.floor(Math.random() * 1400);
+              this.respawnQueue.push({ respawnAt: now + respawnDelay });
             }
-            // schedule a respawn for this enemy type at a later time
-            this.respawnQueue.push({ type: en.type, respawnAt: now + 2500 + Math.floor(Math.random()*2000) });
             break;
           }
         }
       } else {
         // enemy projectile -> players & shields
-        for(const pid of Object.keys(this.players)){
+        for (const pid of Object.keys(this.players)) {
           const p = this.players[pid];
           const st = this.playerState[pid];
           if (!p || !st) continue;
-          const shieldActive = st.shieldExpiresAt > Date.now();
+          const shieldActive = st.shieldExpiresAt > now;
           // shield is rectangle in front of player
-          if (shieldActive){
+          if (shieldActive) {
             const sw = PLAYER_W * 1.8;
-            const sx = p.x + (PLAYER_W - sw)/2;
+            const sx = p.x + (PLAYER_W - sw) / 2;
             const sy = p.y - 0.05;
-            if (aabbCollision({x: pr.x - pr.w/2, y: pr.y - pr.h/2, w: pr.w, h: pr.h}, {x: sx, y: sy, w: sw, h: 0.06})){ pr.alive = false; break; }
+            if (aabbCollision(swept, { x: sx, y: sy, w: sw, h: 0.06 })) { pr.alive = false; break; }
           }
-          if (aabbCollision({x: pr.x - pr.w/2, y: pr.y - pr.h/2, w: pr.w, h: pr.h}, {x: p.x, y: p.y, w: PLAYER_W, h: PLAYER_H})){ pr.alive = false; p.alive = false; this.lives -= 1; break; }
+          if (aabbCollision(swept, { x: p.x, y: p.y, w: PLAYER_W, h: PLAYER_H })) { pr.alive = false; p.alive = false; this.lives -= 1; break; }
         }
       }
     }
@@ -253,9 +310,19 @@ export class SpaceServer extends GameServer {
     if (this.respawnQueue.length > 0) {
       const due = this.respawnQueue.filter(r => r.respawnAt <= now);
       for (const r of due) {
-        this.enemies.push(this.generateEnemy(r.type));
+        const t = r.type || this.randomEnemyType();
+        // spawn one primary enemy
+        this.enemies.push(this.generateEnemy(t));
+        // 50% chance to spawn a secondary extra enemy to increase pressure
+        if (Math.random() < 0.5) this.enemies.push(this.generateEnemy(Math.random() < 0.6 ? t : this.randomEnemyType()));
       }
       this.respawnQueue = this.respawnQueue.filter(r => r.respawnAt > now);
+    }
+
+    // If no enemies left and no pending respawns, start next wave with higher difficulty
+    if (this.enemies.length === 0 && this.respawnQueue.length === 0) {
+      this.waveNumber += 1;
+      this.spawnInitialWave(3, 7);
     }
 
     // Attach runtime state (heat/shield) to players so clients can render HUDs
@@ -275,7 +342,7 @@ export class SpaceServer extends GameServer {
       });
 
       // Broadcast state
-      return [{ payload: { players: this.players, enemies: this.enemies, projectiles: this.projectiles, lives: this.lives } }];
+      return [{ payload: { players: this.players, enemies: this.enemies, projectiles: this.projectiles, lives: this.lives, teamScore: this.teamScore } }];
   }
 
   private handleFire(clientId: string, now: number){
@@ -283,7 +350,7 @@ export class SpaceServer extends GameServer {
     const st = this.playerState[clientId];
     if (!p || !st) return;
     if (st.isOverheated && now < st.overheatedUntil) return;
-    if (now - st.lastShotAt < 120) return; // fire rate limit
+    if (now - st.lastShotAt < 40) return; // fire rate limit (shorter cooldown)
 
     st.lastShotAt = now;
     // heat handling
@@ -302,6 +369,27 @@ export class SpaceServer extends GameServer {
       alive: true
     };
     this.projectiles.push(proj);
+
+    // immediate collision check in case player fires into a very-close enemy
+    for (let j = this.enemies.length - 1; j >= 0; j--) {
+      const en = this.enemies[j];
+      if (!en.alive) continue;
+      const prRect = { x: proj.x - proj.w/2, y: proj.y - proj.h/2, w: proj.w, h: proj.h };
+      if (aabbCollision(prRect, { x: en.x, y: en.y, w: en.w, h: en.h })) {
+        proj.alive = false;
+        en.hp = (en.hp || 1) - 1;
+        if (en.hp <= 0) {
+          en.alive = false;
+          const shooter = this.players[clientId];
+          if (shooter) shooter.score = (shooter.score || 0) + 1;
+          // increment common/team score
+          this.teamScore += 1;
+          const respawnDelay = Math.max(700, 1500 - (this.waveNumber - 1) * 150) + Math.floor(Math.random() * 1400);
+          this.respawnQueue.push({ respawnAt: now + respawnDelay });
+        }
+        break;
+      }
+    }
   }
 
   private handleShield(clientId: string, now: number){
@@ -314,6 +402,7 @@ export class SpaceServer extends GameServer {
 
   private updateEnemies(dt: number, now: number){
     const bounds = { left: -1, right: 1 };
+    const difficulty = Math.pow(1.18, Math.max(0, this.waveNumber - 1));
 
     for(const e of this.enemies){
       if (!e.alive) continue;
@@ -323,14 +412,20 @@ export class SpaceServer extends GameServer {
           e.y = (e.baseY || 0) + (e.amplitude || 0) * Math.sin((e.frequency||1) * e.x + (e.phase||0));
           // fire at peaks
           const sinVal = Math.sin((e.frequency||1) * e.x + (e.phase||0));
-          if (sinVal > 0.9 && (!e.lastPeakFireAt || now - e.lastPeakFireAt > 700)){
+          const peakCooldownMs = Math.max(120, Math.floor(700 / difficulty));
+          if (sinVal > 0.9 && (!e.lastPeakFireAt || now - e.lastPeakFireAt > peakCooldownMs)){
             e.lastPeakFireAt = now;
-            // main downward shot
-            this.projectiles.push({ x: e.x + e.w/2, y: e.y + e.h, vx: 0, vy: ENEMY_PROJECTILE_SPEED, w: PROJ_W, h: PROJ_H, owner: 'enemy', alive: true });
-            // occasionally add spread shots for added difficulty
-            if (Math.random() < 0.35) {
-              this.projectiles.push({ x: e.x + e.w/2 + 0.03, y: e.y + e.h, vx: 0.14, vy: ENEMY_PROJECTILE_SPEED, w: PROJ_W, h: PROJ_H, owner: 'enemy', alive: true });
-              this.projectiles.push({ x: e.x + e.w/2 - 0.03, y: e.y + e.h, vx: -0.14, vy: ENEMY_PROJECTILE_SPEED, w: PROJ_W, h: PROJ_H, owner: 'enemy', alive: true });
+            // main downward shot (scale speed by difficulty)
+            this.projectiles.push({ x: e.x + e.w/2, y: e.y + e.h, vx: 0, vy: ENEMY_PROJECTILE_SPEED * difficulty, w: PROJ_W, h: PROJ_H, owner: 'enemy', alive: true });
+            // increase chance of spread shots with difficulty (clamped)
+            const spreadChance = Math.min(0.8, 0.35 * difficulty);
+            if (Math.random() < spreadChance) {
+              this.projectiles.push({ x: e.x + e.w/2 + 0.03, y: e.y + e.h, vx: 0.14 * difficulty, vy: ENEMY_PROJECTILE_SPEED * difficulty, w: PROJ_W, h: PROJ_H, owner: 'enemy', alive: true });
+              this.projectiles.push({ x: e.x + e.w/2 - 0.03, y: e.y + e.h, vx: -0.14 * difficulty, vy: ENEMY_PROJECTILE_SPEED * difficulty, w: PROJ_W, h: PROJ_H, owner: 'enemy', alive: true });
+            }
+            // occasional extra straight shot on higher difficulties
+            if (Math.random() < Math.min(0.35, 0.08 * difficulty)) {
+              this.projectiles.push({ x: e.x + e.w/2, y: e.y + e.h, vx: 0, vy: ENEMY_PROJECTILE_SPEED * difficulty * 1.05, w: PROJ_W, h: PROJ_H, owner: 'enemy', alive: true });
             }
           }
           // wrap horizontally
@@ -378,9 +473,11 @@ export class SpaceServer extends GameServer {
 
   // Create a new enemy instance for respawn with varied positions by type
   private generateEnemy(type: EnemyType): EnemyState {
+    const difficulty = Math.pow(1.18, Math.max(0, this.waveNumber - 1));
     const startX = -0.9 + Math.random() * 1.8;
     let ex = startX;
     let ey = -0.8;
+    const baseHp = 1 + Math.floor((this.waveNumber - 1) / 2);
     const e: EnemyState = {
       id: this.nextEnemyId++,
       type,
@@ -388,33 +485,39 @@ export class SpaceServer extends GameServer {
       y: ey,
       w: 0.10,
       h: 0.06,
+      hp: baseHp,
       alive: true
     };
 
     if (type === 'PENDULUM'){
-      e.vx = 0.3 * (Math.random() < 0.5 ? 1 : -1);
+      e.vx = (0.25 + Math.random()*0.2) * (Math.random() < 0.5 ? 1 : -1) * difficulty;
       e.baseY = ey + (Math.random()*0.06 - 0.02);
-      e.amplitude = 0.08 + Math.random()*0.06;
-      e.frequency = 2 + Math.random()*2;
+      e.amplitude = (0.08 + Math.random()*0.06) * (1 + 0.08*(this.waveNumber-1));
+      e.frequency = (2 + Math.random()*2) * (1 + 0.06*(this.waveNumber-1));
       e.phase = Math.random()*Math.PI*2;
       e.lastPeakFireAt = 0;
     } else if (type === 'JUMPER'){
-      e.jumpIntervalMs = 1100 + Math.floor(Math.random()*800);
+      e.jumpIntervalMs = Math.max(350, Math.floor(1100 / difficulty) + Math.floor(Math.random()*800));
       e.lastJumpAt = Date.now() + Math.random()*e.jumpIntervalMs;
       e.direction = Math.random() < 0.5 ? -1 : 1;
       e.y = -0.7 + Math.random()*0.06;
     } else if (type === 'DIVER'){
       e.diving = false;
       e.idleStartAt = 0;
-      e.diveStartDelayMs = 2000 + Math.floor(Math.random()*1500);
-      e.blinkMs = 200 + Math.floor(Math.random()*150);
+      e.diveStartDelayMs = Math.max(500, Math.floor(1800 / difficulty) + Math.floor(Math.random()*1500));
+      e.blinkMs = 150 + Math.floor(Math.random()*200);
       e.lastBlinkAt = Date.now();
       e.visible = true;
-      e.diveSpeed = 4 + Math.random()*1.5;
+      e.diveSpeed = (3.8 + Math.random()*1.8) * difficulty;
       e.x = -0.9 + Math.random()*1.8;
       e.y = -0.95 + Math.random()*0.08;
     }
     return e;
+  }
+
+  private randomEnemyType(): EnemyType {
+    const types: EnemyType[] = ['PENDULUM','JUMPER','DIVER'];
+    return types[Math.floor(Math.random() * types.length)];
   }
 
   isFinished(): boolean { return this.lives <= 0; }
@@ -429,15 +532,39 @@ export class SpaceClient extends GameClient {
   private serverEnemies: EnemyState[] = [];
   private projectiles: ProjectileState[] = [];
   private messageQueue: any[] = [];
+  // Start client-side lives matching server
   private lives: number = 5;
   private localShieldUntil: number = 0;
   private localShieldCooldownUntil: number = 0;
+  private gameOver: boolean = false;
+  private finalScores: { name: string; score: number }[] = [];
+  private returnRequested: boolean = false;
+  private gameOverAt: number = 0;
+  private teamScore: number = 0;
 
   constructor(userInput: UserInput, myId: string){
     super(userInput, myId);
 
     // Simple key mapping for fire/shield (both Space/Enter and Shift/Ctrl)
     document.addEventListener('keydown', (e) => {
+      // if this client has been marked spectator by the server, allow exit (Enter/Escape)
+      // but ignore other game inputs
+      const meCheck = (this.players && this.players[this.myId]) ? this.players[this.myId] : null;
+      const isSpectator = !!(meCheck && meCheck.isSpectator);
+      if (isSpectator) {
+        if (e.code === 'Enter' || e.code === 'Escape') {
+          this.requestReturnToLobby();
+        }
+        return;
+      }
+      // When game over, use Enter/Escape to confirm return to lobby
+      if (this.gameOver) {
+        if (e.code === 'Enter' || e.code === 'Escape') {
+          this.requestReturnToLobby();
+        }
+        return;
+      }
+
       if (e.code === 'Space' || e.code === 'Enter') this.messageQueue.push({ kind: 'fire' });
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'ControlLeft' || e.code === 'ControlRight'){
         const now = Date.now();
@@ -451,16 +578,24 @@ export class SpaceClient extends GameClient {
     });
   }
 
-  init(players){ this.players = players; }
+  async init(players){ this.players = players; }
 
   draw(ctx: CanvasRenderingContext2D, dt: number){
     if (!this.players) return;
 
     const { screenW, screenH, moveDirectionX } = this.userInput;
+    const canvas = this.userInput.canvas;
+    const canvasW = canvas.width;
+    const canvasH = canvas.height;
+    // compute device pixel ratio used by the canvas by comparing its
+    // internal pixel size (canvas.width) with its CSS size (bounding rect)
+    const canvasRect = canvas.getBoundingClientRect();
+    const cssWidth = canvasRect.width || this.userInput.screenW || canvasW;
+    const dprScale = canvasW / cssWidth || window.devicePixelRatio || 1;
 
-    // Local smoothing movement for the local player
+    // Local smoothing movement for the local player (disabled if game over)
     const me = this.players[this.myId];
-    if (me){
+    if (me && !this.gameOver && !me.isSpectator){
       // apply immediate local input
       me.x += moveDirectionX * dt * PLAYER_SPEED;
       // clamp locally
@@ -475,15 +610,17 @@ export class SpaceClient extends GameClient {
       }
     }
 
-    // Smooth other players toward their server positions
-    const playerSmoothingAlpha = Math.min(1, dt * 8);
-    Object.keys(this.players).forEach(pid => {
-      if (pid === this.myId) return;
-      const other = this.players[pid];
-      if (!other) return;
-      const sx = (other as any)._serverX;
-      if (typeof sx === 'number') other.x = lerp(other.x, sx, playerSmoothingAlpha);
-    });
+    // Smooth other players toward their server positions (skip smoothing on game over)
+    if (!this.gameOver) {
+      const playerSmoothingAlpha = Math.min(1, dt * 8);
+      Object.keys(this.players).forEach(pid => {
+        if (pid === this.myId) return;
+        const other = this.players[pid];
+        if (!other) return;
+        const sx = (other as any)._serverX;
+        if (typeof sx === 'number') other.x = lerp(other.x, sx, playerSmoothingAlpha);
+      });
+    }
 
     // Draw in normalized coordinates: translate/scale like other games
     ctx.save();
@@ -552,18 +689,53 @@ export class SpaceClient extends GameClient {
 
     ctx.restore();
 
-    // HUD
-    ctx.fillStyle = '#fff'; ctx.font = '20px Arial'; ctx.fillText(`Lives: ${this.lives}`, 12, 24);
-    // Draw player scores
-    ctx.font = '14px Arial';
-    let sy = 44;
-    Object.keys(this.players || {}).forEach(id => {
-      const p = this.players[id];
-      const score = (p && p.score) ? p.score : 0;
-      const name = (p && p.name) ? p.name : id;
-      ctx.fillText(`${name}: ${score}`, 12, sy);
-      sy += 18;
-    });
+    // HUD — draw centered at the top so it never clips at the sides
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'center';
+    // use canvas vs CSS scale to pick font sizes and margins so text isn't clipped on high-DPI
+    const hudMarginCss = 18;
+    const fontLargeCss = 20;
+    const fontSmallCss = 14;
+    const hudMargin = Math.max(8, Math.round(hudMarginCss * dprScale));
+    const fontLargePx = Math.max(12, Math.round(fontLargeCss * dprScale));
+    const fontSmallPx = Math.max(10, Math.round(fontSmallCss * dprScale));
+    const extraPad = Math.max(2, Math.round(2 * dprScale));
+    const cssTop = canvasRect.top || 0;
+    const topInsetPx = Math.round(Math.max(0, cssTop) * dprScale);
+    const hudY = Math.max(hudMargin + extraPad, topInsetPx + hudMargin + Math.round(2 * dprScale));
+    const hudX = Math.round(canvasW / 2);
+    ctx.font = `${fontLargePx}px Arial`;
+    ctx.fillText(`Lives: ${this.lives}`, hudX, Math.round(hudY));
+    ctx.font = `${fontSmallPx}px Arial`;
+    ctx.fillText(`Score: ${this.teamScore}`, hudX, Math.round(hudY + fontLargePx + Math.round(6 * dprScale)));
+    ctx.restore();
+
+    // Game over overlay + final scoreboard
+    if (this.gameOver) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      // draw overlay using canvas pixels
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      ctx.font = `${Math.max(18, Math.round(48 * dprScale))}px Arial`;
+      ctx.fillText('Game Over', canvasW / 2, canvasH * 0.25);
+
+      ctx.font = `${Math.max(14, Math.round(22 * dprScale))}px Arial`;
+      ctx.fillText('Final Score', canvasW / 2, canvasH * 0.33);
+
+      ctx.font = `${Math.max(18, Math.round(28 * dprScale))}px Arial`;
+      ctx.fillText(`${this.teamScore}`, canvasW / 2, canvasH * 0.42);
+
+      ctx.font = `${Math.max(12, Math.round(16 * dprScale))}px Arial`;
+      ctx.fillText('Premi Enter o Escape per tornare alla lobby', canvasW / 2, canvasH * 0.83);
+      ctx.restore();
+    }
   }
 
   handleMessage(message: any){
@@ -621,12 +793,30 @@ export class SpaceClient extends GameClient {
     // projectiles and lives are displayed directly
     this.projectiles = message.projectiles || [];
     this.lives = message.lives;
+    this.teamScore = typeof message.teamScore === 'number' ? message.teamScore : this.teamScore;
+
+    // detect game over from server snapshot and capture final scores for the overlay
+    if (this.lives <= 0 && !this.gameOver) {
+      this.gameOver = true;
+      this.gameOverAt = Date.now();
+      // snapshot final scores from the last server update
+      this.finalScores = Object.keys(this.players || {}).map(id => {
+        const p = this.players[id] || {};
+        return { name: (p.name || id), score: (p.score || 0) };
+      }).sort((a,b) => b.score - a.score);
+      // clear queued local actions
+      this.messageQueue = [];
+    }
   }
 
   flushMessages(): any[] {
     if (!this.players) return [];
+    // while in the game-over menu, do not send any game actions
+    if (this.gameOver) return [];
     const me = this.players[this.myId];
     if (!me) return [];
+    // spectators do not send actions
+    if (me.isSpectator) return [];
 
     const msgs = [];
     msgs.push({ kind: 'move', x: me.x });
@@ -635,6 +825,11 @@ export class SpaceClient extends GameClient {
     this.messageQueue = [];
     return msgs;
   }
+  // Called by the lobby to know when to remove the game client.
+  // We only return true after the player explicitly requests to return to the lobby.
+  public requestReturnToLobby(): void {
+    this.returnRequested = true;
+  }
 
-  isFinished(): boolean { return this.lives <= 0; }
+  isFinished(): boolean { return this.returnRequested; }
 }
