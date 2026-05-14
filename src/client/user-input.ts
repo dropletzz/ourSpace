@@ -4,6 +4,7 @@ export class UserInput {
     public canvas: HTMLCanvasElement;
     public screenW: number = 0;
     public screenH: number = 0;
+    public pixelRatio: number = 1;
     public moveDirectionX: number = 0;
     public moveDirectionY: number = 0;
     public mouseX: number = 0;
@@ -15,14 +16,23 @@ export class UserInput {
     private left: boolean = false;
     private right: boolean = false;
 
-    constructor(canvas: HTMLCanvasElement) {
+    constructor(canvas: HTMLCanvasElement, onResize?: (pixelRatio: number) => void) {
         this.canvas = canvas;
 
         const resize = () => {
-            this.canvas.width = window.innerWidth; 
-            this.canvas.height = window.innerHeight;
-            this.screenW = window.innerWidth;
-            this.screenH = window.innerHeight;
+            const screenW = window.innerWidth;
+            const screenH = window.innerHeight;
+            const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+
+            this.canvas.width = Math.max(1, Math.round(screenW * pixelRatio));
+            this.canvas.height = Math.max(1, Math.round(screenH * pixelRatio));
+            this.canvas.style.width = `${screenW}px`;
+            this.canvas.style.height = `${screenH}px`;
+            this.screenW = screenW;
+            this.screenH = screenH;
+            this.pixelRatio = pixelRatio;
+
+            if (onResize) onResize(pixelRatio);
         };
         resize();
         window.addEventListener('resize', resize);

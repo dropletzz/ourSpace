@@ -132,8 +132,12 @@ export class PongServer extends GameServer {
         }]
     }
 
+    clientClosed(id: string): void {
+        if (this.players) delete this.players[id];
+    }
+
     isFinished(): boolean {
-        return false;
+        return !this.players || Object.keys(this.players).length === 0;
     }
 }
 

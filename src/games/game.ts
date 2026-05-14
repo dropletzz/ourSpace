@@ -10,6 +10,8 @@ export abstract class GameServer {
     ): OutgoingMsg[];
 
     abstract isFinished(): boolean;
+
+    clientClosed(clientId: string): void {}
 }
 
 /////////////////////////////////////////
