@@ -88,7 +88,8 @@ export class GameSelect {
 
             const { gameKey, players } = this.gameProposal;
             const { minPlayers } = GAMES[gameKey];
-            if (minPlayers <= Object.keys(players).length)
+            const minPlayersOk = !minPlayers || minPlayers <= Object.keys(players).length
+            if (minPlayersOk)
                 this.onGameStarted(this.gameProposal.proposalId);
             else
                 alert(`You need at least ${minPlayers} players to start the game`);

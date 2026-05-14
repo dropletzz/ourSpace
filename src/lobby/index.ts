@@ -276,7 +276,8 @@ export class LobbyServer {
                 if (this.currentProposal && this.currentProposal.proposalId === payload.proposalId) {
                     const { acceptedPlayerIds, gameKey } = this.currentProposal;
                     const { maxPlayers } = GAMES[gameKey];
-                    if (acceptedPlayerIds.size < maxPlayers) {
+                    const maxPlayersOk = !maxPlayers || acceptedPlayerIds.size < maxPlayers;
+                    if (maxPlayersOk) {
                         this.currentProposal.acceptedPlayerIds.add(clientId);
                         messages.push({
                             payload: {
@@ -301,8 +302,9 @@ export class LobbyServer {
             else if (payload.kind === "startGame" && this.currentProposal) {
                 const { acceptedPlayerIds, gameKey } = this.currentProposal;
                 const { minPlayers } = GAMES[gameKey];
+                const minPlayersOk = !minPlayers || acceptedPlayerIds.size >= minPlayers;
 
-                if (acceptedPlayerIds.size >= minPlayers && this.currentProposal.proposerId === clientId) {
+                if (minPlayersOk && this.currentProposal.proposerId === clientId) {
                     const gameStartedMessage = this.startGameFromProposal();
                     if (gameStartedMessage) messages.push(gameStartedMessage);
                 }
