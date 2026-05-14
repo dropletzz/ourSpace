@@ -134,18 +134,8 @@ export class GuessGameServer extends GameServer {
         return outgoingMessages;
     }
 
-    clientClosed(clientId: string): void {
-        if (!this.gamePlayers) return;
-
-        delete this.gamePlayers[clientId];
-        if (!Object.keys(this.gamePlayers).length) {
-            this.gameState.gameOver = true;
-            delete this.gameState.winnerId;
-        }
-    }
-
     isFinished(): boolean {
-        return this.gameState.gameOver || !this.gamePlayers || Object.keys(this.gamePlayers).length === 0;
+        return this.gameState.gameOver;
     }
 }
 

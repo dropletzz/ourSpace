@@ -4,14 +4,8 @@ import { LobbyClient } from '../lobby/index';
 
 const playground = document.getElementById('playground') as HTMLCanvasElement;
 const ctx: CanvasRenderingContext2D = playground.getContext("2d")!;
-ctx.imageSmoothingEnabled = false;
 
-const syncCanvasTransform = (pixelRatio: number) => {
-    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-};
-
-export const userInput = new UserInput(playground, syncCanvasTransform);
+export const userInput = new UserInput(playground);
 export const lobby = new LobbyClient(userInput);
 
 let lastFrameTime = performance.now();
