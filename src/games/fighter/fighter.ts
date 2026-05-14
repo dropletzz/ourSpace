@@ -8,7 +8,7 @@ import {
 import type { IncomingMsg, OutgoingMsg } from '../../server';
 import { GameClient, GameServer } from '../game';
 import { UserInput } from '../../client/user-input';
-import { getCharacterDrawFunction } from './characters';
+import { getCharacterDrawFunction } from '../../client/characters';
 import { AnimationManager, createDefaultFighterAnimationManager } from './fighter-animation';
 
 export type PlayerState =
