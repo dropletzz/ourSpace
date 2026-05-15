@@ -8,6 +8,7 @@ import { MicroRacingClient, MicroRacingServer } from "./micro-racing";
 import { MinecraftDiamondRushClient, MinecraftDiamondRushServer } from "./minecraft2d";
 import { DoomGameClient, DoomGameServer } from "./doom";
 import { FortniteClient, FortniteServer } from "./fortnite/fortnite";
+import { HeadBallClient, HeadBallServer } from "./headball"; // ← AGGIUNTO
 
 export type GameInfo = {
     client: new (userInput: UserInput, myId: string) => GameClient;
@@ -30,7 +31,6 @@ export const GAMES: Record<string, GameInfo> = {
         minPlayers: 2,
         maxPlayers: 2
     },
-
     shooter: {
         server: shooterServer,
         client: shooterClient,
@@ -68,5 +68,12 @@ export const GAMES: Record<string, GameInfo> = {
         name: 'Fortnite',
         minPlayers: 1,
         maxPlayers: 99
+    },
+    headball: {                          // ← AGGIUNTO
+        client: HeadBallClient,
+        server: HeadBallServer,
+        name: 'Head Ball Online',
+        minPlayers: 2,
+        maxPlayers: 2
     }
 }
