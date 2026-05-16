@@ -49,9 +49,9 @@ const INPUT_BUFFER     = 15;
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type PlayerState = 'IDLE' | 'MOVE' | 'JUMP' | 'ATTACK' | 'BLOCK' | 'HIT' | 'KO'
-    | 'CROUCHING' | 'DASHING' | 'DODGING' | 'CHARGING' | 'KNOCKDOWN';
+    | 'CROUCHING' | 'DASHING' | 'DODGING' | 'CHARGING' | 'KNOCKDOWN' | 'SHORYUKEN';
 
-export type AttackType = 'LIGHT' | 'HEAVY' | 'AERIAL' | 'SWEEP' | 'PROJECTILE';
+export type AttackType = 'LIGHT' | 'HEAVY' | 'AERIAL' | 'SWEEP' | 'PROJECTILE'|'SHORYUKEN';
 export type AttackHeight = 'HIGH' | 'MID' | 'LOW';
 type MatchPhase = 'COUNTDOWN' | 'ACTIVE' | 'ROUND_END' | 'RESULTS';
 
@@ -99,11 +99,11 @@ export interface FighterPlayer {
     prevHeavy: boolean;
     prevJump: boolean;
     prevDodge: boolean;
+    prevInputMove: number;
     lastMoveTapFrame: Record<string, number>;
     inputQueue: string[];
 
     currentAnimationFrame: number;
-    animationTimer: number;
     damageFlashTimer: number;
 
     roundsWon: number;
@@ -167,7 +167,7 @@ const ATTACK_UPPERCUT: AttackDef = {
 };
 const ATTACK_PROJECTILE: AttackDef = {
     x: 0, y: 0, w: 0.11, h: 0.11,
-    damage: 8, height: 'MID', startFrame: 0, endFrame: 90, totalFrames: 90,
+    damage: 8, height: 'MID', startFrame: 0, endFrame: 22, totalFrames: 22,
     knockback: 0.35, hitstun: 13, blockstun: BLOCKSTUN, hitstop: 3
 };
 
@@ -177,7 +177,8 @@ function getAttackDef(player: FighterPlayer): AttackDef | null {
         case 'HEAVY':      return ATTACK_HEAVY;
         case 'AERIAL':     return ATTACK_AERIAL;
         case 'SWEEP':      return ATTACK_SWEEP;
-        case 'PROJECTILE': return ATTACK_UPPERCUT; // shoryuken uses HEAVY slot via PROJECTILE state
+        case 'SHORYUKEN':  return ATTACK_UPPERCUT;
+        case 'PROJECTILE': return ATTACK_PROJECTILE;
         default:           return null;
     }
 }
@@ -281,9 +282,9 @@ function createPlayer(id: string, base: Player, isPlayer1: boolean): FighterPlay
         blockHeight: 'MID', isBlocking: false,
         inputMove: 0, inputJump: false, inputLight: false, inputHeavy: false,
         inputBlock: false, inputCrouch: false, inputDodge: false,
-        prevLight: false, prevHeavy: false, prevJump: false, prevDodge: false,
+        prevLight: false, prevHeavy: false, prevJump: false, prevDodge: false, prevInputMove: 0,
         lastMoveTapFrame: {}, inputQueue: [],
-        currentAnimationFrame: 0, animationTimer: 0, damageFlashTimer: 0,
+        currentAnimationFrame: 0,  damageFlashTimer: 0,
         roundsWon: 0, comboCount: 0, maxCombo: 0, comboTimer: 0, totalDamageDealt: 0
     };
 }
@@ -348,9 +349,8 @@ function pushbox(player: FighterPlayer): Rectangle {
 }
 
 // ─── Special move detection ───────────────────────────────────────────────────
-// Queue stores direction tokens ("2","3","6") and button tokens ("A","B").
 // Hadoken: down, down-forward, forward + light  →  "236A"
-// Shoryuken: forward, down, down-forward + light → "623A"
+// Shoryuken: down, down + heavy → "22B"
 
 function appendToQueue(player: FighterPlayer, token: string): void {
     if (player.inputQueue[player.inputQueue.length - 1] !== token) {
@@ -375,16 +375,6 @@ function updateInputQueue(player: FighterPlayer): void {
     if (player.inputHeavy && !player.prevHeavy) appendToQueue(player, 'B');
 }
 
-function matchSequence(queue: string[], pattern: string): boolean {
-    const needed = pattern.split('');
-    let qi = queue.length - 1;
-    for (let pi = needed.length - 1; pi >= 0 && qi >= 0; qi--) {
-        if (queue[qi] === needed[pi]) pi--;
-    }
-    return true; // if we exit the inner loop naturally, all matched
-    // Actually need proper logic:
-}
-
 function detectSpecial(player: FighterPlayer, pattern: string): boolean {
     const tokens = pattern.split('');
     let ti = tokens.length - 1;
@@ -403,7 +393,7 @@ function startAttack(player: FighterPlayer, type: AttackType): void {
 }
 
 function startUppercut(player: FighterPlayer): void {
-    setState(player, 'ATTACK', 'PROJECTILE'); // reuse PROJECTILE slot for shoryuken
+    setState(player, 'ATTACK', 'SHORYUKEN');
     player.attackTimer = ATTACK_UPPERCUT.totalFrames;
     player.invFrames = 6;
     player.vy = -JUMP_FORCE * 0.45;
@@ -424,9 +414,7 @@ function spawnProjectile(owner: FighterPlayer, frame: number): Projectile {
 }
 
 function tryDash(player: FighterPlayer, frame: number): boolean {
-    const p = player as FighterPlayer & { _lastMove?: number; _dashDir?: number };
-    const prev = p._lastMove ?? 0;
-    p._lastMove = player.inputMove;
+    const prev = player.prevInputMove;
 
     if (player.inputMove === 0 || prev !== 0 || !canAct(player) || player.inputCrouch) return false;
 
@@ -435,7 +423,6 @@ function tryDash(player: FighterPlayer, frame: number): boolean {
     player.lastMoveTapFrame[key] = frame;
 
     if (frame - last <= DOUBLE_TAP_WIN) {
-        p._dashDir = player.inputMove;
         setState(player, 'DASHING');
         player.vx = player.inputMove * DASH_SPEED;
         return true;
@@ -491,7 +478,7 @@ function updatePlayer(
         return;
     }
 
-    if (player.state === 'ATTACK') {
+    if (player.state === 'ATTACK' || player.state === 'SHORYUKEN') {
         const def = getAttackDef(player);
         if (def && player.stateFrame > def.totalFrames) {
             player.attackCharge = 0;
@@ -535,10 +522,9 @@ function updatePlayer(
     }
 
     if (lightPressed && canAct(player)) {
-        // Shoryuken: forward, down, down-forward + light
-        if (detectSpecial(player, '623A')) { startUppercut(player); player.inputQueue = []; return; }
         // Hadoken: down, down-forward, forward + light
-        if (detectSpecial(player, '236A')) {
+        if (detectSpecial(player, '236A') && player.superMeter >= 100) {
+            player.superMeter = 0;
             setState(player, 'ATTACK', 'PROJECTILE');
             player.attackTimer = 22;
             onProjectile(spawnProjectile(player, frame));
@@ -550,6 +536,13 @@ function updatePlayer(
     }
 
     if (heavyPressed && canAct(player)) {
+        // Shoryuken: forward, down, down + heavy
+        if (detectSpecial(player, '22B') && player.superMeter >= 100) {
+            player.superMeter = 0;
+            startUppercut(player);
+            player.inputQueue = [];
+            return;
+        }
         if (player.inputCrouch && player.isGrounded) startAttack(player, 'SWEEP');
         else if (player.isGrounded) setState(player, 'CHARGING');
         else startAttack(player, 'AERIAL');
@@ -815,10 +808,11 @@ export class FighterServer extends GameServer {
 
     private endFrameInputs(): void {
         Object.values(this.players).forEach(p => {
-            p.prevLight = p.inputLight;
-            p.prevHeavy = p.inputHeavy;
-            p.prevJump  = p.inputJump;
-            p.prevDodge = p.inputDodge;
+            p.prevLight     = p.inputLight;
+            p.prevHeavy     = p.inputHeavy;
+            p.prevJump      = p.inputJump;
+            p.prevDodge     = p.inputDodge;
+            p.prevInputMove = p.inputMove;
         });
     }
 
@@ -1012,7 +1006,6 @@ export class FighterClient extends GameClient {
         anim.setState(player.state);
         anim.flipSprite(player.facing);
         anim.updateAnimation(dt);
-        player.currentAnimationFrame = anim.currentAnimationFrame;
 
         const drawPerson = getCharacterDrawFunction(player.character);
         const cx = player.x + PLAYER_W / 2;
@@ -1067,10 +1060,20 @@ export class FighterClient extends GameClient {
                 ctx.fillRect(PLAYER_W * (0.2 + side * 0.3), -PLAYER_H * 0.2, PLAYER_W * 0.5, PLAYER_H * 0.08);
                 break;
             case 'HEAVY':
-            case 'PROJECTILE': // shoryuken reuses PROJECTILE slot
                 ctx.fillStyle = '#e74c3c';
                 ctx.fillRect(PLAYER_W * (0.15 + side * 0.4), -PLAYER_H * 0.24, PLAYER_W * 0.7, PLAYER_H * 0.12);
                 break;
+            case 'SHORYUKEN': {
+                const t = Math.min(1, player.stateFrame / ATTACK_UPPERCUT.totalFrames);
+                const angle = (player.facing === 'right' ? -1 : 1) * (Math.PI / 2) * t;
+                ctx.save();
+                ctx.translate(PLAYER_W * 0.15, -PLAYER_H * 0.24);
+                ctx.rotate(angle);
+                ctx.fillStyle = '#e74c3c';
+                ctx.fillRect(0, -PLAYER_H * 0.06, PLAYER_W * 0.7, PLAYER_H * 0.12);
+                ctx.restore();
+                break;
+            }
             case 'SWEEP':
                 ctx.fillStyle = '#f39c12';
                 ctx.fillRect(0, PLAYER_H * 0.12, PLAYER_W, PLAYER_H * 0.06);
