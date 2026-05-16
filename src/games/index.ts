@@ -69,7 +69,7 @@ export const GAMES: Record<string, GameInfo> = {
         minPlayers: 1,
         maxPlayers: 99
     },
-    headball: {                          // ← AGGIUNTO
+    headball: {                        
         client: HeadBallClient,
         server: HeadBallServer,
         name: 'Head Ball Online',
