@@ -1,43 +1,3 @@
-/**
- * ═══════════════════════════════════════════════════════════════
- *  HEAD BALL ONLINE  —  Indie Dark
- *  Gioco multiplayer 1v1 adattato al framework ourSpace.
- * ═══════════════════════════════════════════════════════════════
- *
- *  ARCHITETTURA CLIENT / SERVER
- *  ─────────────────────────────
- *  SERVER (HeadBallServer) — gira su Node.js, unica fonte di verità:
- *    • Calcola tutta la fisica (posizioni, velocità, collisioni)
- *    • Gestisce lo spawn e la raccolta delle bolle superpoteri
- *    • Valida i goal e aggiorna il punteggio
- *    • Gestisce il cooldown del Teleport
- *    • Invia uno snapshot dello stato ogni tick (~30/s)
- *
- *  CLIENT (HeadBallClient) — gira nel browser:
- *    • Mostra il manuale di gioco al primo avvio
- *    • Legge la tastiera e invia i comandi al server
- *    • Riceve gli snapshot e disegna il canvas
- *    • NON calcola fisica: mostra solo ciò che il server dice
- *
- *  CONTROLLI
- *  ──────────
- *    A / ←     muovi sinistra
- *    D / →     muovi destra
- *    W / ↑     salta  (premi di nuovo in aria = doppio salto)
- *    F         Teleport — scatta in avanti (cooldown 10s)
- *
- *  SUPERPOTERI BOLLA  (nessun tasto — si raccolgono camminandoci sopra)
- *    ❄ ICE      — congela l'avversario per 3s
- *    💪 BIG HEAD — testa più grande per 5s (hitbox allargata)
- *    Le bolle appaiono ogni 15s. Al momento della raccolta parte
- *    un nuovo timer di 15s per il prossimo spawn.
- *
- *  SELEZIONE PERSONAGGIO
- *    A / ←    personaggio precedente
- *    D / →    personaggio successivo
- *    S / Enter  conferma
- */
-
 import { getCollisionSide } from '../common';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { GameClient, GameServer } from './game';
@@ -1120,7 +1080,7 @@ export class HeadBallClient extends GameClient {
         const char = CHARS[this.charIdx];
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
         ctx.fillStyle = 'rgba(238,245,255,0.55)'; ctx.font = `${Math.round(CH*0.022)}px sans-serif`;
-        ctx.fillText('HEAD BALL ONLINE', CW/2, py+18);
+        ctx.fillText('HEAD BALL', CW/2, py+18);
         ctx.fillStyle = '#eef5ff'; ctx.font = `bold ${Math.round(CH*0.042)}px sans-serif`;
         ctx.fillText(
             this.confirmed           ? 'Pronto! In attesa avversario...' :
@@ -1193,7 +1153,7 @@ export class HeadBallClient extends GameClient {
         const cx = CW/2;
         ctx.textAlign='center'; ctx.textBaseline='top';
         ctx.fillStyle='#eef5ff'; ctx.font=`800 ${Math.round(CH*0.058)}px sans-serif`;
-        ctx.fillText('⚽ HEAD BALL ONLINE', cx, py+20);
+        ctx.fillText('⚽ HEAD BALL', cx, py+20);
         ctx.fillStyle='rgba(238,245,255,0.55)'; ctx.font=`${Math.round(CH*0.026)}px sans-serif`;
         ctx.fillText('Manuale di gioco', cx, py+72);
 
