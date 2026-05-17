@@ -1097,7 +1097,7 @@ export class HeadBallClient extends GameClient {
         const char = CHARS[this.charIdx];
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
         ctx.fillStyle = 'rgba(238,245,255,0.55)'; ctx.font = `${Math.round(CH*0.022)}px sans-serif`;
-        ctx.fillText('HEAD BALL ONLINE', CW/2, py+18);
+        ctx.fillText('HEAD BALL', CW/2, py+18);
         ctx.fillStyle = '#eef5ff'; ctx.font = `bold ${Math.round(CH*0.042)}px sans-serif`;
         ctx.fillText(
             this.confirmed           ? 'Pronto! In attesa avversario...' :
@@ -1170,7 +1170,7 @@ export class HeadBallClient extends GameClient {
         const cx = CW/2;
         ctx.textAlign='center'; ctx.textBaseline='top';
         ctx.fillStyle='#eef5ff'; ctx.font=`800 ${Math.round(CH*0.058)}px sans-serif`;
-        ctx.fillText('⚽ HEAD BALL ONLINE', cx, py+20);
+        ctx.fillText('⚽ HEAD BALL', cx, py+20);
         ctx.fillStyle='rgba(238,245,255,0.55)'; ctx.font=`${Math.round(CH*0.026)}px sans-serif`;
         ctx.fillText('Manuale di gioco', cx, py+72);
 
