@@ -8,7 +8,7 @@ import { MicroRacingClient, MicroRacingServer } from "./micro-racing";
 import { MinecraftDiamondRushClient, MinecraftDiamondRushServer } from "./minecraft2d";
 import { DoomGameClient, DoomGameServer } from "./doom";
 import { FortniteClient, FortniteServer } from "./fortnite/fortnite";
-import { HeadBallClient, HeadBallServer } from "./headball"; // ← AGGIUNTO
+import { HeadBallClient, HeadBallServer } from "./headball"; 
 
 export type GameInfo = {
     client: new (userInput: UserInput, myId: string) => GameClient;
