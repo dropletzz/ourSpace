@@ -1,43 +1,3 @@
-/**
- * ═══════════════════════════════════════════════════════════════
- *  HEAD BALL ONLINE  —  Indie Dark
- *  Gioco multiplayer 1v1 adattato al framework ourSpace.
- * ═══════════════════════════════════════════════════════════════
- *
- *  ARCHITETTURA CLIENT / SERVER
- *  ─────────────────────────────
- *  SERVER (HeadBallServer) — gira su Node.js, unica fonte di verità:
- *    • Calcola tutta la fisica (posizioni, velocità, collisioni)
- *    • Gestisce lo spawn e la raccolta delle bolle superpoteri
- *    • Valida i goal e aggiorna il punteggio
- *    • Gestisce il cooldown del Teleport
- *    • Invia uno snapshot dello stato ogni tick (~30/s)
- *
- *  CLIENT (HeadBallClient) — gira nel browser:
- *    • Mostra il manuale di gioco al primo avvio
- *    • Legge la tastiera e invia i comandi al server
- *    • Riceve gli snapshot e disegna il canvas
- *    • NON calcola fisica: mostra solo ciò che il server dice
- *
- *  CONTROLLI
- *  ──────────
- *    A / ←     muovi sinistra
- *    D / →     muovi destra
- *    W / ↑     salta  (premi di nuovo in aria = doppio salto)
- *    F         Teleport — scatta in avanti (cooldown 10s)
- *
- *  SUPERPOTERI BOLLA  (nessun tasto — si raccolgono camminandoci sopra)
- *    ❄ ICE      — congela l'avversario per 3s
- *    💪 BIG HEAD — testa più grande per 5s (hitbox allargata)
- *    Le bolle appaiono ogni 15s. Al momento della raccolta parte
- *    un nuovo timer di 15s per il prossimo spawn.
- *
- *  SELEZIONE PERSONAGGIO
- *    A / ←    personaggio precedente
- *    D / →    personaggio successivo
- *    S / Enter  conferma
- */
-
 import { getCollisionSide } from '../common';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { GameClient, GameServer } from './game';
@@ -375,7 +335,15 @@ export class HeadBallServer extends GameServer {
     private resetAfterGoal(scoringSeat: Seat): void {
         // La palla torna al centro con kickoff verso chi ha subito il gol
         this.ball = mkBall(scoringSeat === 0 ? -1 : 1);
-        this.order.forEach((id, i) => { this.players[id] = mkPlayer(i as Seat, this.sels[i].characterId); });
+        this.order.forEach((id, i) => {
+            // Salviamo il cooldown del teleport PRIMA di ricreare il giocatore:
+            // mkPlayer() azzererebbe tpCdMs, ma dopo un goal il cooldown deve
+            // continuare a scorrere — il giocatore non deve essere "premiato"
+            // con un reset gratuito solo perché è stato segnato un punto.
+            const prevTpCd = this.players[this.order[i]]?.tpCdMs ?? 0;
+            this.players[this.order[i]] = mkPlayer(i as Seat, this.sels[i].characterId);
+            this.players[this.order[i]].tpCdMs = prevTpCd;
+        });
     }
 
     private goFinished(): void {
