@@ -134,6 +134,7 @@ export class LobbyServer {
     public people: Record<string, Person>;
     public outgoingMessages: OutgoingMsg[];
     public games: Record<string, GameServer> = {};
+    public gamesNames: Record<string, string> = {};
     private gameIdCounter: number = 0;
     
     private currentProposal: {
@@ -147,6 +148,14 @@ export class LobbyServer {
     constructor() {
         this.people = {};
         this.outgoingMessages = [];
+
+        setInterval(() => {
+            console.log('\n=====GIOCHI ATTIVI==========================')
+            Object.keys(this.games).forEach(key => {
+                console.log(`${key} -> ${this.gamesNames[key]}`);
+            })
+            console.log('============================================')
+        }, 2000);
     }
 
     clientConnected(id: string) {
@@ -345,7 +354,10 @@ export class LobbyServer {
                 });
             });
             
-            if (game.isFinished()) delete this.games[gameId];
+            if (game.isFinished()) {
+                delete this.games[gameId];
+                delete this.gamesNames[gameId];
+            }
         });
         // -game
 
@@ -402,6 +414,7 @@ export class LobbyServer {
 
         game.init(players);
         this.games[gameId] = game;
+        this.gamesNames[gameId] = gameKey;
         
         this.currentProposal = null;
         
