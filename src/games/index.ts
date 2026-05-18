@@ -1,6 +1,7 @@
 import { GameServer, GameClient } from "./game";
 import { UserInput } from "../client/user-input";
 import { GuessGameClient, GuessGameServer } from "./guess";
+import { GuessSongClient, GuessSongServer } from "./guess-song";
 import { PongClient, PongServer } from "./multi-pong";
 import { shooterClient, shooterServer } from "./topShooter";
 import { BrawlClient , BrawlServer } from "./brawl";
@@ -22,6 +23,13 @@ export const GAMES: Record<string, GameInfo> = {
         client: GuessGameClient,
         server: GuessGameServer,
         name: 'Guess the number'
+    },
+    "guess-song": {
+        client: GuessSongClient,
+        server: GuessSongServer,
+        name: 'Guess the Song',
+        minPlayers: 1,
+        maxPlayers: 4
     },
     pong: {
         client: PongClient,

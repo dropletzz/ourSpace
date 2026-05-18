@@ -6,15 +6,21 @@ export abstract class ClickableRectangle {
     protected rect: Rectangle;
     protected onClickCallback: () => void;
     protected transformMatrix: DOMMatrix;
+    protected enabled: boolean;
 
     constructor(userInput: UserInput, onClickCallback: () => void) {
         this.userInput = userInput;
         this.rect = { x: 0, y: 0, w: 0, h: 0 };
         this.onClickCallback = onClickCallback;
         this.transformMatrix = new DOMMatrix();
+        this.enabled = true;
 
         userInput.canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
         userInput.canvas.addEventListener('pointerup', e => this.onPointerUp(e));
+    }
+
+    setEnabled(value: boolean) {
+        this.enabled = value;
     }
 
     abstract onPointerDown(e: PointerEvent);
@@ -71,10 +77,18 @@ export class Button extends ClickableRectangle {
     }
 
     onPointerDown(e: PointerEvent) {
-        if (this.isInside(e)) this.isPressed = true;
+        if (!this.enabled) return;
+        if (this.isInside(e)) {
+            this.isPressed = true;
+            e.preventDefault();
+        }
     }
     onPointerUp(e: PointerEvent) {
-        if (this.isPressed && this.isInside(e)) this.onClickCallback();
+        if (!this.enabled) return;
+        if (this.isPressed && this.isInside(e)) {
+            this.onClickCallback();
+            e.preventDefault();
+        }
         this.isPressed = false;
     }
 
@@ -146,10 +160,18 @@ export class TextInput extends ClickableRectangle {
     }
 
     onPointerDown(e: PointerEvent) {
+        if (!this.enabled) return;
         this.isFocused = this.isInside(e);
+        if (this.isFocused) e.preventDefault();
     }
 
-    onPointerUp(e: PointerEvent) {}
+    onPointerUp(e: PointerEvent) {
+        if (!this.enabled) return;
+        if (this.isInside(e)) {
+            this.isFocused = true;
+            e.preventDefault();
+        }
+    }
 
     draw(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
         this.updateRectangle(ctx, x, y, w, h);
