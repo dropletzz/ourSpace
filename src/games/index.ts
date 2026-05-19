@@ -9,6 +9,7 @@ import { MinecraftDiamondRushClient, MinecraftDiamondRushServer } from "./minecr
 import { DoomGameClient, DoomGameServer } from "./doom";
 import { FortniteClient, FortniteServer } from "./fortnite/fortnite";
 import { HeadBallClient, HeadBallServer } from "./headball"; 
+import { FighterClient, FighterServer } from "./fighter/fighter";
 
 export type GameInfo = {
     client: new (userInput: UserInput, myId: string) => GameClient;
@@ -28,8 +29,6 @@ export const GAMES: Record<string, GameInfo> = {
         client: PongClient,
         server: PongServer,
         name: 'Pong',
-        minPlayers: 2,
-        maxPlayers: 2
     },
     shooter: {
         server: shooterServer,
@@ -73,6 +72,11 @@ export const GAMES: Record<string, GameInfo> = {
         client: HeadBallClient,
         server: HeadBallServer,
         name: 'Head Ball',
+    },
+    fighter: {
+        client: FighterClient,
+        server: FighterServer,
+        name: 'Fighter',
         minPlayers: 2,
         maxPlayers: 2
     }
