@@ -6,15 +6,21 @@ export abstract class ClickableRectangle {
     protected rect: Rectangle;
     protected onClickCallback: () => void;
     protected transformMatrix: DOMMatrix;
+    protected enabled: boolean;
 
     constructor(userInput: UserInput, onClickCallback: () => void) {
         this.userInput = userInput;
         this.rect = { x: 0, y: 0, w: 0, h: 0 };
         this.onClickCallback = onClickCallback;
         this.transformMatrix = new DOMMatrix();
+        this.enabled = true;
 
         userInput.canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
         userInput.canvas.addEventListener('pointerup', e => this.onPointerUp(e));
+    }
+
+    setEnabled(value: boolean) {
+        this.enabled = value;
     }
 
     abstract onPointerDown(e: PointerEvent);
@@ -68,25 +74,49 @@ export class Button extends ClickableRectangle {
         this.text = text;
         this.colors = {};
         this.isPressed = false;
+
+        this.userInput.canvas.addEventListener('pointercancel', () => {
+            this.isPressed = false;
+        });
+    }
+
+    setEnabled(value: boolean) {
+        super.setEnabled(value);
+        if (!value) {
+            this.isPressed = false;
+        }
     }
 
     onPointerDown(e: PointerEvent) {
-        if (this.isInside(e)) this.isPressed = true;
+        if (!this.enabled) return;
+        if (this.isInside(e)) {
+            this.isPressed = true;
+            e.preventDefault();
+        }
     }
     onPointerUp(e: PointerEvent) {
-        if (this.isPressed && this.isInside(e)) this.onClickCallback();
+        if (!this.enabled) {
+            this.isPressed = false;
+            return;
+        }
+        if (this.isPressed && this.isInside(e)) {
+            this.onClickCallback();
+            e.preventDefault();
+        }
         this.isPressed = false;
     }
 
     draw(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
         this.updateRectangle(ctx, x, y, w, h);
 
-        const mainColor = this.colors.main || "#d18800";
-        const textColor = this.colors.text || "#e6e6e6";
+        const defaultMain = this.enabled ? "#d18800" : "#555555";
+        const defaultText = this.enabled ? "#e6e6e6" : "#aaaaaa";
+        const mainColor = this.colors.main || defaultMain;
+        const textColor = this.colors.text || defaultText;
         const shadowColor = this.colors.shadow || "#161616";
 
         const shadowOffset = Math.min(w, h) * 0.07;
-        const pushOffset = this.isPressed ? shadowOffset * 0.5 : 0;
+        const pushOffset = this.enabled && this.isPressed ? shadowOffset * 0.5 : 0;
 
         // ombra
         ctx.beginPath();
@@ -146,10 +176,18 @@ export class TextInput extends ClickableRectangle {
     }
 
     onPointerDown(e: PointerEvent) {
+        if (!this.enabled) return;
         this.isFocused = this.isInside(e);
+        if (this.isFocused) e.preventDefault();
     }
 
-    onPointerUp(e: PointerEvent) {}
+    onPointerUp(e: PointerEvent) {
+        if (!this.enabled) return;
+        if (this.isInside(e)) {
+            this.isFocused = true;
+            e.preventDefault();
+        }
+    }
 
     draw(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
         this.updateRectangle(ctx, x, y, w, h);
