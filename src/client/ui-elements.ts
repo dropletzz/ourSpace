@@ -74,6 +74,17 @@ export class Button extends ClickableRectangle {
         this.text = text;
         this.colors = {};
         this.isPressed = false;
+
+        this.userInput.canvas.addEventListener('pointercancel', () => {
+            this.isPressed = false;
+        });
+    }
+
+    setEnabled(value: boolean) {
+        super.setEnabled(value);
+        if (!value) {
+            this.isPressed = false;
+        }
     }
 
     onPointerDown(e: PointerEvent) {
@@ -84,7 +95,10 @@ export class Button extends ClickableRectangle {
         }
     }
     onPointerUp(e: PointerEvent) {
-        if (!this.enabled) return;
+        if (!this.enabled) {
+            this.isPressed = false;
+            return;
+        }
         if (this.isPressed && this.isInside(e)) {
             this.onClickCallback();
             e.preventDefault();
@@ -95,12 +109,14 @@ export class Button extends ClickableRectangle {
     draw(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
         this.updateRectangle(ctx, x, y, w, h);
 
-        const mainColor = this.colors.main || "#d18800";
-        const textColor = this.colors.text || "#e6e6e6";
+        const defaultMain = this.enabled ? "#d18800" : "#555555";
+        const defaultText = this.enabled ? "#e6e6e6" : "#aaaaaa";
+        const mainColor = this.colors.main || defaultMain;
+        const textColor = this.colors.text || defaultText;
         const shadowColor = this.colors.shadow || "#161616";
 
         const shadowOffset = Math.min(w, h) * 0.07;
-        const pushOffset = this.isPressed ? shadowOffset * 0.5 : 0;
+        const pushOffset = this.enabled && this.isPressed ? shadowOffset * 0.5 : 0;
 
         // ombra
         ctx.beginPath();

@@ -56,6 +56,7 @@ type GameState = {
     currentRound: number;
     scores: Record<string, number>;
     skipVotes: Record<string, boolean>;
+    skipsThisRound: number;
     winnerId?: string;
     roundWinner?: string | null;
     errorMessage?: string;
@@ -64,11 +65,13 @@ type GameState = {
 };
 
 type TrackResult = {
+    trackId?: number;
     trackName: string;
     artistName: string;
     previewUrl: string;
     collectionName: string;
     genre: string;
+    releaseYear?: number;
 };
 
 function normalizeText(text: string): string {
@@ -97,9 +100,9 @@ function buildTrackMask(trackName: string, stage: number): string {
     });
 }
 
-function fetchItunesSearch(term: string): Promise<any> {
+function fetchItunesSearch(term: string, offset: number = 0): Promise<any> {
     const encoded = encodeURIComponent(term);
-    const url = `https://itunes.apple.com/search?term=${encoded}&media=music&entity=song&limit=30&country=IT`;
+    const url = `https://itunes.apple.com/search?term=${encoded}&media=music&entity=song&limit=30&offset=${offset}&country=IT`;
     const fetchFn = (globalThis as any).fetch;
 
     if (!fetchFn) {
@@ -109,20 +112,68 @@ function fetchItunesSearch(term: string): Promise<any> {
     return fetchFn(url).then((response: any) => response.json());
 }
 
-function chooseTrack(results: any[]): TrackResult | null {
-    const validTracks = results
-        .filter((item) => item.previewUrl && item.trackName && item.artistName)
-        .map((item) => ({
-            trackName: item.trackName,
-            artistName: item.artistName,
-            previewUrl: item.previewUrl,
-            collectionName: item.collectionName || 'Unknown album',
-            genre: item.primaryGenreName || 'Unknown genre',
-        }));
+type YearRange = {
+    min: number;
+    max: number;
+};
 
-    if (validTracks.length === 0) return null;
-    const index = Math.floor(Math.random() * validTracks.length);
-    return validTracks[index];
+function chooseTrack(results: any[], usedTrackKeys: Set<string>, yearRange: YearRange | null = null): TrackResult | null {
+    const mappedTracks = results
+        .filter((item) => item.previewUrl && item.trackName && item.artistName)
+        .map((item) => {
+            const trackId = typeof item.trackId === 'number' ? item.trackId : null;
+            const releaseYear = item.releaseDate ? new Date(item.releaseDate).getFullYear() : null;
+            const trackKey = trackId !== null
+                ? `id:${trackId}`
+                : `track:${normalizeText(`${item.trackName}|${item.artistName}`)}`;
+
+            return {
+                trackId,
+                trackKey,
+                trackName: item.trackName,
+                artistName: item.artistName,
+                previewUrl: item.previewUrl,
+                collectionName: item.collectionName || 'Unknown album',
+                genre: item.primaryGenreName || 'Unknown genre',
+                releaseYear,
+            };
+        });
+
+    const filterCandidates = (excludeUsed: boolean, yearRange: YearRange | null) => {
+        return mappedTracks.filter((item) => {
+            if (excludeUsed && usedTrackKeys.has(item.trackKey)) return false;
+            if (yearRange !== null) {
+                return item.releaseYear !== null && item.releaseYear >= yearRange.min && item.releaseYear <= yearRange.max;
+            }
+            return true;
+        });
+    };
+
+    const hasAnyReleaseYear = mappedTracks.some((item) => item.releaseYear !== null);
+    let candidates = filterCandidates(true, yearRange);
+    if (candidates.length === 0 && !hasAnyReleaseYear) {
+        candidates = filterCandidates(true, null);
+    }
+    if (candidates.length === 0) {
+        candidates = filterCandidates(false, yearRange);
+    }
+    if (candidates.length === 0 && !hasAnyReleaseYear) {
+        candidates = filterCandidates(false, null);
+    }
+    if (candidates.length === 0) return null;
+
+    const index = Math.floor(Math.random() * candidates.length);
+    const chosen = candidates[index];
+    usedTrackKeys.add(chosen.trackKey);
+    return {
+        trackId: chosen.trackId,
+        trackName: chosen.trackName,
+        artistName: chosen.artistName,
+        previewUrl: chosen.previewUrl,
+        collectionName: chosen.collectionName,
+        genre: chosen.genre,
+        releaseYear: chosen.releaseYear,
+    };
 }
 
 export class GuessSongServer extends GameServer {
@@ -132,9 +183,11 @@ export class GuessSongServer extends GameServer {
     private searchPromise: Promise<void> | null = null;
     private internalTrackName: string = '';
     private pendingBroadcast: boolean = false;
+    private playedTrackKeys: Set<string>;
 
     constructor() {
         super();
+        this.playedTrackKeys = new Set<string>();
         this.gameState = {
             phase: 'selection',
             mode: null,
@@ -153,6 +206,7 @@ export class GuessSongServer extends GameServer {
             currentRound: 0,
             scores: {},
             skipVotes: {},
+            skipsThisRound: 0,
             actualTrackName: null,
             actualArtistName: null,
         };
@@ -161,6 +215,7 @@ export class GuessSongServer extends GameServer {
 
     init(players: Record<string, Player>) {
         this.gamePlayers = players;
+        this.playedTrackKeys.clear();
         this.initMessage = {
             kind: 'guess_song_update',
             gameState: this.gameState,
@@ -198,18 +253,24 @@ export class GuessSongServer extends GameServer {
                 this.handleSongOption(clientId, payload.mode, payload.value, payload.rounds);
             }
             else if (payload.kind === 'guess_song_skip' && this.gameState.phase === 'playing' && !this.gameState.gameOver) {
+                if (!(clientId in this.gamePlayers)) return;
                 this.gameState.skipVotes[clientId] = true;
+
+                Object.keys(this.gameState.skipVotes).forEach((id) => {
+                    if (!(id in this.gamePlayers)) {
+                        delete this.gameState.skipVotes[id];
+                    }
+                });
+
                 const skipCount = Object.keys(this.gameState.skipVotes).length;
                 const totalPlayers = Object.keys(this.gamePlayers).length;
-                if (skipCount === totalPlayers) {
-                    if (this.gameState.currentRound >= this.gameState.totalRounds) {
-                        this.gameState.gameOver = true;
-                        this.gameState.phase = 'game_over';
-                        this.gameState.roundWinner = null;
-                        this.gameState.winnerId = undefined;
-                    } else {
-                        this.startNextRound();
-                    }
+                const skipThreshold = Math.min(4, totalPlayers);
+                if (this.gameState.skipsThisRound >= 4) {
+                    this.pendingBroadcast = true;
+                    return;
+                }
+                if (skipCount >= skipThreshold) {
+                    this.restartCurrentRound();
                 } else {
                     this.pendingBroadcast = true;
                 }
@@ -277,11 +338,15 @@ export class GuessSongServer extends GameServer {
         Object.keys(this.gamePlayers).forEach(id => this.gameState.scores[id] = 0);
         this.gameState.roundWinner = null;
         this.gameState.skipVotes = {};
+        this.gameState.skipsThisRound = 0;
+        this.playedTrackKeys.clear();
         this.pendingBroadcast = true;
 
-        this.searchPromise = fetchItunesSearch(mode === 'genre' ? `${trimmedValue} song` : trimmedValue)
+        const yearRange = this.getSearchYearRange();
+        const randomOffset = Math.floor(Math.random() * 60);
+        this.searchPromise = fetchItunesSearch(this.gameState.mode === 'genre' ? `${this.gameState.selectedValue} song` : this.gameState.selectedValue, randomOffset)
             .then((result: any) => {
-                const track = chooseTrack(result.results || []);
+                const track = chooseTrack(result.results || [], this.playedTrackKeys, yearRange);
                 if (!track) {
                     this.gameState.phase = 'selection';
                     this.gameState.errorMessage = 'Nessun brano trovato. Prova un genere o un artista diverso.';
@@ -317,21 +382,43 @@ export class GuessSongServer extends GameServer {
         if (this.gameState.currentRound >= this.gameState.totalRounds) return;
 
         this.gameState.currentRound += 1;
+        this.gameState.skipsThisRound = 0;
+        this.loadSongForCurrentRound('Nessun brano trovato per il round successivo.', 'Errore nella ricerca del round successivo.');
+    }
+
+    private restartCurrentRound() {
+        if (!this.gameState.mode || !this.gameState.selectedValue) return;
+
+        this.gameState.skipsThisRound += 1;
+        this.loadSongForCurrentRound('Nessun brano trovato per lo skip.', 'Errore nella ricerca dopo lo skip.');
+    }
+
+    private loadSongForCurrentRound(notFoundMessage: string, errorMessage: string) {
         this.gameState.phase = 'loading';
         this.gameState.errorMessage = undefined;
         this.gameState.previewUrl = null;
         this.gameState.roundWinner = null;
+        this.gameState.winnerId = undefined;
+        this.gameState.actualTrackName = null;
+        this.gameState.actualArtistName = null;
+        this.gameState.guesses = [];
+        this.gameState.gameOver = false;
         this.gameState.skipVotes = {};
         this.pendingBroadcast = true;
 
+        const yearRange = this.getSearchYearRange();
+        const randomOffset = Math.floor(Math.random() * 60);
         this.searchPromise = fetchItunesSearch(this.gameState.mode === 'genre'
             ? `${this.gameState.selectedValue} song`
-            : this.gameState.selectedValue)
+            : this.gameState.selectedValue,
+            randomOffset)
             .then((result: any) => {
-                const track = chooseTrack(result.results || []);
+                const track = chooseTrack(result.results || [], this.playedTrackKeys, yearRange);
                 if (!track) {
                     this.gameState.phase = 'round_over';
-                    this.gameState.errorMessage = 'Nessun brano trovato per il round successivo.';
+                    this.gameState.roundWinner = null;
+                    this.gameState.winnerId = undefined;
+                    this.gameState.errorMessage = notFoundMessage;
                     this.pendingBroadcast = true;
                     return;
                 }
@@ -354,9 +441,29 @@ export class GuessSongServer extends GameServer {
             })
             .catch(() => {
                 this.gameState.phase = 'round_over';
-                this.gameState.errorMessage = 'Errore nella ricerca del round successivo.';
+                this.gameState.roundWinner = null;
+                this.gameState.winnerId = undefined;
+                this.gameState.actualTrackName = null;
+                this.gameState.actualArtistName = null;
+                this.gameState.errorMessage = errorMessage;
                 this.pendingBroadcast = true;
             });
+    }
+
+    private getSearchYearRange(): YearRange | null {
+        if (!this.gameState.selectedValue) return null;
+        const match = this.gameState.selectedValue.match(/anni\s+(\d{2,4})/i);
+        if (!match) return null;
+
+        const year = Number(match[1]);
+        if (Number.isNaN(year)) return null;
+
+        // decades: anni 50 => 1950-1959, anni 2000 => 2000-2009, anni 2010 => 2010-2019, etc.
+        const prefix = match[1].length === 2 ? year : year;
+        const min = prefix < 100 ? 1900 + prefix : prefix;
+        const max = min + 9;
+
+        return { min, max };
     }
 
     isFinished(): boolean {
@@ -388,7 +495,7 @@ export class GuessSongClient extends GameClient {
     private errorMessage: string | null = null;
 
     private readonly genres = ['Pop', 'Rock', 'Rap', 'Electronic', 'Jazz', 'Country'];
-    private readonly italianEras = ['anni 50', 'anni 60', 'anni 70', 'anni 80', 'anni 90', 'anni 2000', 'anni 2010', 'anni 2020'];
+    private readonly italianEras = ['anni 70', 'anni 80', 'anni 90', 'anni 2000', 'anni 2010', 'anni 2020'];
     private readonly roundOptions = [1, 3, 5];
 
     constructor(userInput: UserInput, myId: string) {
@@ -651,6 +758,44 @@ export class GuessSongClient extends GameClient {
     private drawPlayingScreen(ctx: CanvasRenderingContext2D, screenW: number, screenH: number) {
         const state = this.gameState!;
 
+        if (state.gameOver) {
+            ctx.font = 'bold 36px Arial';
+            ctx.fillStyle = '#4CAF50';
+            const winnerName = this.players[state.winnerId!]?.name || 'Giocatore';
+            ctx.fillText(`${winnerName} ha indovinato l'ultimo round!`, screenW / 2, screenH / 2 + 120);
+            if (state.actualArtistName && state.actualTrackName) {
+                ctx.font = '24px Arial';
+                ctx.fillText(`Il brano era: ${state.actualArtistName} - ${state.actualTrackName}`, screenW / 2, screenH / 2 + 170);
+            }
+            ctx.font = '22px Arial';
+            ctx.fillText('Classifica finale:', screenW / 2, screenH / 2 + 220);
+            ctx.textAlign = 'left';
+            const ranking = Object.entries(state.scores)
+                .map(([id, score]) => ({ playerName: this.players[id]?.name || 'Giocatore', score }))
+                .sort((a, b) => b.score - a.score);
+            ranking.forEach((entry, index) => {
+                ctx.fillText(`${index + 1}. ${entry.playerName}: ${entry.score}`, screenW / 2 - 200, screenH / 2 + 260 + index * 26);
+            });
+            ctx.textAlign = 'center';
+            return;
+        }
+
+        if (state.phase === 'round_over') {
+            ctx.fillStyle = '#FFBA49';
+            ctx.font = 'bold 36px Arial';
+            if (state.errorMessage && !state.roundWinner) {
+                ctx.fillText(state.errorMessage, screenW / 2, screenH / 2 + 120);
+                return;
+            }
+            ctx.fillText(`${state.roundWinner || 'Un giocatore'} ha vinto il round!`, screenW / 2, screenH / 2 + 120);
+            if (state.actualArtistName && state.actualTrackName) {
+                ctx.font = '24px Arial';
+                ctx.fillText(`Il brano era: ${state.actualArtistName} - ${state.actualTrackName}`, screenW / 2, screenH / 2 + 170);
+            }
+            this.nextRoundButton.draw(ctx, screenW / 2 - 120, screenH / 2 + 220, 240, 50);
+            return;
+        }
+
         ctx.font = '24px Arial';
         ctx.fillStyle = '#ffffff';
         ctx.fillText('Ascolta il preview e indovina il brano', screenW / 2, 140);
@@ -682,58 +827,18 @@ export class GuessSongClient extends GameClient {
 
         const skipCount = Object.keys(state.skipVotes).length;
         const totalPlayers = Object.keys(this.players).length;
+        const skipThreshold = Math.min(4, totalPlayers);
         ctx.font = '18px Arial';
         ctx.fillStyle = '#cccccc';
-        ctx.fillText(`Skip votati: ${skipCount} / ${totalPlayers}`, screenW / 2, screenH / 2 + 70);
+        ctx.fillText(`Skip votati: ${skipCount} / ${skipThreshold}`, screenW / 2, screenH / 2 + 70);
 
         const hasVotedSkip = state.skipVotes[this.myId] === true;
-        this.skipButton.setLabel(hasVotedSkip ? 'Skip (votato)' : 'Skip');
-        this.skipButton.setEnabled(!hasVotedSkip);
-        this.skipButton.setColors({ main: '#d32f2f' });
+        const hasReachedMaxSkips = state.skipsThisRound >= 4;
+        const skipEnabled = state.phase === 'playing' && !state.gameOver && !hasVotedSkip && !hasReachedMaxSkips;
+        this.skipButton.setLabel(hasReachedMaxSkips ? 'Skip max raggiunto' : hasVotedSkip ? 'Skip (votato)' : 'Skip');
+        this.skipButton.setEnabled(skipEnabled);
+        this.skipButton.setColors({ main: '#d32f2f', text: '#e6e6e6' });
         this.skipButton.draw(ctx, screenW / 2 - 70, screenH / 2 + 90, 140, 45);
-
-        if (state.gameOver) {
-            ctx.fillStyle = '#4CAF50';
-            ctx.font = 'bold 36px Arial';
-            const winnerName = this.players[state.winnerId!]?.name || 'Giocatore';
-            ctx.fillText(`${winnerName} ha indovinato l'ultimo round!`, screenW / 2, screenH / 2 + 120);
-            if (state.actualArtistName && state.actualTrackName) {
-                ctx.font = '24px Arial';
-                ctx.fillText(`Il brano era: ${state.actualArtistName} - ${state.actualTrackName}`, screenW / 2, screenH / 2 + 170);
-            }
-            ctx.font = '22px Arial';
-            ctx.fillText('Classifica finale:', screenW / 2, screenH / 2 + 220);
-            ctx.textAlign = 'left';
-            const ranking = Object.entries(state.scores)
-                .map(([id, score]) => ({ playerName: this.players[id]?.name || 'Giocatore', score }))
-                .sort((a, b) => b.score - a.score);
-            ranking.forEach((entry, index) => {
-                ctx.fillText(`${index + 1}. ${entry.playerName}: ${entry.score}`, screenW / 2 - 200, screenH / 2 + 260 + index * 26);
-            });
-            ctx.textAlign = 'center';
-            return;
-        }
-
-        if (state.phase === 'round_over') {
-            ctx.fillStyle = '#FFBA49';
-            ctx.font = 'bold 36px Arial';
-            ctx.fillText(`${state.roundWinner || 'Un giocatore'} ha vinto il round!`, screenW / 2, screenH / 2 + 120);
-            if (state.actualArtistName && state.actualTrackName) {
-                ctx.font = '24px Arial';
-                ctx.fillText(`Il brano era: ${state.actualArtistName} - ${state.actualTrackName}`, screenW / 2, screenH / 2 + 170);
-            }
-            this.nextRoundButton.draw(ctx, screenW / 2 - 120, screenH / 2 + 220, 240, 50);
-            return;
-        }
-
-        if (this.lastGuessResult) {
-            ctx.font = '20px Arial';
-            ctx.fillStyle = this.lastGuessResult.result === 'correct' ? '#4CAF50' : '#ffcc00';
-            const text = this.lastGuessResult.result === 'correct'
-                ? `${this.lastGuessResult.playerName} ha indovinato!`
-                : `${this.lastGuessResult.playerName} ha provato: ${this.lastGuessResult.guess}`;
-            ctx.fillText(text, screenW / 2, screenH / 2 + 100);
-        }
 
         ctx.font = '18px Arial';
         ctx.fillStyle = '#cccccc';
