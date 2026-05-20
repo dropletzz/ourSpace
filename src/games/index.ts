@@ -81,6 +81,8 @@ export const GAMES: Record<string, GameInfo> = {
         client: HeadBallClient,
         server: HeadBallServer,
         name: 'Head Ball',
+        minPlayers: 2,
+        maxPlayers: 2
     },
     fighter: {
         client: FighterClient,
