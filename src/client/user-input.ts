@@ -33,6 +33,7 @@ export class UserInput {
         document.addEventListener("keydown", (event) => {
             if (event.repeat) return;
 
+
             if (event.code == "KeyW") this.up = true;
             else if (event.code == "KeyA") this.left = true;
             else if (event.code == "KeyS") this.down = true;

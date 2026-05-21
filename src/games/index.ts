@@ -15,14 +15,15 @@ import { FighterClient, FighterServer } from "./fighter/fighter";
 import { SlitherClient, SlitherServer } from "./slitherIO/slitherIO";
 import { SpaceClient, SpaceServer } from "./space-invaders";
 import { PacmanClient, PacmanServer } from "./pacman";
+import { PolloAMollaServer, PolloAMollaClient } from "./PolloAMolla/game";
 
 export type GameInfo = {
-    client: new (userInput: UserInput, myId: string) => GameClient;
-    server: new () => GameServer;
-    name: string;
-    minPlayers?: number;
-    maxPlayers?: number;
-}
+  client: new (userInput: UserInput, myId: string) => GameClient;
+  server: new () => GameServer;
+  name: string;
+  minPlayers?: number;
+  maxPlayers?: number;
+};
 
 export const GAMES: Record<string, GameInfo> = {
     guess: {
@@ -122,5 +123,12 @@ export const GAMES: Record<string, GameInfo> = {
         server: PacmanServer,
         name: 'Pac-Man',
         maxPlayers: 4
+    },
+    PolloAMolla: {
+        client: PolloAMollaClient,
+        server: PolloAMollaServer,
+        name: "Pollo A Molla",
+        minPlayers: 1,
+        maxPlayers: 20,
     },
 }
