@@ -168,7 +168,13 @@ const SPAWN_POSITIONS = [
 // rimette un player alla sua posizione di spawn e azzera tutti gli stati di movimento
 // non tocca vite e danno — quello lo fa chi chiama questa funzione
 function spawnPlayer(p: PlayerState): void {
-    const spawn        = SPAWN_POSITIONS[p.spawnIndex]; // prendo la spawn giusta in base all'indice
+
+    let spawn        = SPAWN_POSITIONS[p.spawnIndex]; // prendo la spawn giusta in base all'indice
+
+    if ( spawn === undefined ) {
+        spawn = SPAWN_POSITIONS[0];
+    }
+
     p.x                = spawn.x;
     p.y                = spawn.y;
     p.vx               = 0;
