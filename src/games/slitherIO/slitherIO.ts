@@ -55,6 +55,11 @@ const FOOD_COUNT = 34;
 const COSMIC_EVENT_INTERVAL = 8;
 const CENTER_FOOD_RADIUS = 2;
 
+const PLAYER_COLORS = [
+    '#FF5733', '#33FF57', '#3357FF', '#F1C40F', '#35024a',
+    '#1ABC9C', '#E74C3C', '#61c0ff', '#2ECC71', '#e622e6',
+];
+
 // ========================== FUNZIONI DI UTILITÀ ========================== 
 // selezionare direzioni casuali quando il serpente tocca i bordi
 function randomChoice<T>(items: T[]): T {
@@ -128,7 +133,6 @@ function keepInsideMap(player: SlitherPlayer): void {
     if (touched) chooseValidDirectionNearBorder(player);
 }
 
-// Genera un ID univoco per oggetti
 function createId(prefix: string): string {
     return `${prefix}-${Math.floor(Math.random() * 1000000)}`;
 }
@@ -153,13 +157,15 @@ export class SlitherServer extends GameServer {
         this.gameOver = false;
         this.winnerId = null;
 
-        Object.keys(players).forEach(id => {
+        const playerIds = Object.keys(players);
+
+        playerIds.forEach((id, index) => {
             const data = players[id] || {};
 
             this.players[id] = {
                 id,
                 name: data.name || `Giocatore${id}`,
-                skin: '#cc6600',
+                skin: PLAYER_COLORS[index % PLAYER_COLORS.length],
                 x: (Math.random() - 0.5) * MAP_WIDTH * 0.6,
                 y: (Math.random() - 0.5) * MAP_HEIGHT * 0.6,
                 dx: Math.random() < 0.5 ? -1 : 1,
@@ -423,7 +429,7 @@ export class SlitherClient extends GameClient {
             this.players[id] = {
                 id,
                 name: p.name || `Giocatore${id}`,
-                skin: '#ff6600',
+                skin: p.skin,
                 x: p.x || 0,
                 y: p.y || 0,
                 dx: p.dx || 1,
@@ -565,7 +571,7 @@ export class SlitherClient extends GameClient {
                 this.players[id] = {
                     id,
                     name: p.name || current?.name,
-                    skin: current?.skin,
+                    skin: p.skin || current?.skin,
                     x: p.x,
                     y: p.y,
                     dx: p.dx || current?.dx,
