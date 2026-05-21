@@ -85,13 +85,13 @@ function normalizeText(text: string): string {
 function buildTrackMask(trackName: string, stage: number): string {
     return trackName.replace(/[A-Za-zÀ-ÿ]/g, (char, index) => {
         if (stage >= 3) return char;
-        const isFirstLetter = index === 0 || /[\s\-\(\[\{\"'“‘]/.test(trackName[index - 1]);
+        const isFirstLetter = index === 0 || /[\s\-\(\[\{\"'"']/.test(trackName[index - 1]);
         if (stage === 0) return '_';
         if (stage === 1) return isFirstLetter ? char : '_';
         if (stage === 2) {
             if (isFirstLetter) return char;
             const previousChar = trackName[index - 1];
-            if (/[A-Za-zÀ-ÿ]/.test(previousChar) && /[\s\-\(\[\{\"'“‘]/.test(trackName[index - 2] || ' ')) {
+            if (/[A-Za-zÀ-ÿ]/.test(previousChar) && /[\s\-\(\[\{\"'"']/.test(trackName[index - 2] || ' ')) {
                 return char;
             }
             return '_';
@@ -106,7 +106,7 @@ function fetchItunesSearch(term: string, offset: number = 0): Promise<any> {
     const fetchFn = (globalThis as any).fetch;
 
     if (!fetchFn) {
-        return Promise.reject(new Error('Fetch non disponibile sul server')); 
+        return Promise.reject(new Error('Fetch non disponibile sul server'));
     }
 
     return fetchFn(url).then((response: any) => response.json());
@@ -458,7 +458,6 @@ export class GuessSongServer extends GameServer {
         const year = Number(match[1]);
         if (Number.isNaN(year)) return null;
 
-        // decades: anni 50 => 1950-1959, anni 2000 => 2000-2009, anni 2010 => 2010-2019, etc.
         const prefix = match[1].length === 2 ? year : year;
         const min = prefix < 100 ? 1900 + prefix : prefix;
         const max = min + 9;
@@ -633,7 +632,10 @@ export class GuessSongClient extends GameClient {
             this.drawPlayingScreen(ctx, screenW, screenH);
         }
 
-        this.exitButton.draw(ctx, 20, screenH - 70, 120, 50);
+        // Mostra il pulsante Esci solo nella schermata di selezione o a fine partita
+        if (this.gameState.phase === 'selection' || this.gameState.phase === 'game_over') {
+            this.exitButton.draw(ctx, 20, screenH - 70, 120, 50);
+        }
     }
 
     private drawSelectionScreen(ctx: CanvasRenderingContext2D, screenW: number, screenH: number) {
