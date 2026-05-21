@@ -49,7 +49,9 @@ export const GAMES: Record<string, GameInfo> = {
     brawl: {
         client: BrawlClient,
         server: BrawlServer,
-        name: 'TOTAL STK BATTLE 67'
+        name: 'SLINGUAZZATE LETALI',
+        minPlayers: 2,
+        maxPlayers: 4
     },
     microracing: {
         client: MicroRacingClient,
