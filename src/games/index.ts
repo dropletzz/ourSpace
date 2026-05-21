@@ -3,6 +3,7 @@ import { UserInput } from "../client/user-input";
 import { GuessGameClient, GuessGameServer } from "./guess";
 import { GuessSongClient, GuessSongServer } from "./guess-song";
 import { PongClient, PongServer } from "./multi-pong";
+import { OurSpaceGameClient, OurSpaceGameServer } from "./herosurv";
 import { shooterClient, shooterServer } from "./topShooter";
 import { BrawlClient , BrawlServer } from "./brawl";
 import { MicroRacingClient, MicroRacingServer } from "./micro-racing";
@@ -38,7 +39,14 @@ export const GAMES: Record<string, GameInfo> = {
     pong: {
         client: PongClient,
         server: PongServer,
-        name: 'Pong',
+        name: 'Pong'
+    },
+    herosurv: {
+        client: OurSpaceGameClient,
+        server: OurSpaceGameServer,
+        name: 'Herosurv',
+        minPlayers: 2,
+        maxPlayers: 10
     },
     shooter: {
         server: shooterServer,
