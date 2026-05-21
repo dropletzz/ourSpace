@@ -162,6 +162,7 @@ export class PongClient extends GameClient {
     }
 
     async init(players) {
+        players = players;
         const folder = '/assets/multi-pong';
         await this.assets.loadImage('ball', `${folder}/soccer-ball.png`);
         this.assets.loadSound('bump', `${folder}/bump.mp3`);
