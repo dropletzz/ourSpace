@@ -33,15 +33,15 @@ export class UserInput {
         document.addEventListener("keydown", (event) => {
             if (event.repeat) return;
 
+
             if (event.code == "KeyW") this.up = true;
             else if (event.code == "KeyA") this.left = true;
             else if (event.code == "KeyS") this.down = true;
             else if (event.code == "KeyD") this.right = true;
 
             this.updateMoveDirections();
-
-            this.updateMoveDirections();
         });
+
         document.addEventListener("keyup", (event) => {
             if (event.code == "KeyW") this.up = false;
             else if (event.code == "KeyA") this.left = false;
@@ -71,6 +71,18 @@ export class UserInput {
 
         this.canvas.addEventListener('mousedown', (event) => { if (event.button === 0) this.mouseLeftPressed = true; });
         this.canvas.addEventListener('mouseup', (event) => { if (event.button === 0) this.mouseLeftPressed = false; });
+
+        window.addEventListener('wheel', (event) => {
+            event.preventDefault();
+
+            if (event.deltaY > 0) {
+                this.zoom *= (1 - ZOOM_SPEED);
+            } else {
+                this.zoom *= (1 + ZOOM_SPEED);
+            }
+
+            this.zoom = Math.min(Math.max(ZOOM_MIN, this.zoom), ZOOM_MAX);
+        }, { passive: false });
     }
 
     updateMoveDirections() {
