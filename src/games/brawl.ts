@@ -171,6 +171,7 @@ function spawnPlayer(p: PlayerState): void {
 
     let spawn        = SPAWN_POSITIONS[p.spawnIndex]; // prendo la spawn giusta in base all'indice
 
+    //fix bug spawn ( se non è definito spawna in basso )
     if ( spawn === undefined ) {
         spawn = SPAWN_POSITIONS[0];
     }
