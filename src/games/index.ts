@@ -12,6 +12,7 @@ import { FortniteClient, FortniteServer } from "./fortnite/fortnite";
 import { HeadBallClient, HeadBallServer } from "./headball"; 
 import { FighterClient, FighterServer } from "./fighter/fighter";
 import { SlitherClient, SlitherServer } from "./slitherIO/slitherIO";
+import { PacmanClient, PacmanServer } from "./pacman";
 
 export type GameInfo = {
     client: new (userInput: UserInput, myId: string) => GameClient;
@@ -97,5 +98,11 @@ export const GAMES: Record<string, GameInfo> = {
         name: 'SlitherIO',
         minPlayers: 2,
         maxPlayers: 10
-    }
+    },
+    pacman: {
+        client: PacmanClient,
+        server: PacmanServer,
+        name: 'Pac-Man',
+        maxPlayers: 4
+    },
 }
