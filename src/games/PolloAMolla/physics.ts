@@ -6,7 +6,6 @@ import { createPlayer, resetPlayerToSpawn } from "./player";
 import { JumpPlayer, PlayerInput, PositionedPlatform } from "./types";
 
 const FALL_RESET_THRESHOLD = MAP_HEIGHT + 2;
-const FLY_SPEED = 8;
 
 type PreviousBody = {
   x: number;
@@ -276,30 +275,7 @@ function applyGravity(player: JumpPlayer, dt: number) {
   player.vy = Math.min(PLAYER.terminalVelocity, player.vy + PLAYER.gravity * dt);
 }
 
-function applyFlyMovement(player: JumpPlayer, input: PlayerInput, dt: number) {
-  player.onGround = false;
-  player.isCharging = false;
-  player.chargeSeconds = 0;
-  player.coyoteSeconds = 0;
-  player.jumpBufferSeconds = 0;
-  player.bufferedRelease = false;
-  player.bufferedChargeSeconds = 0;
-  player.groundPlatformId = null;
-
-  if (input.moveDirectionX !== 0) player.facing = input.moveDirectionX < 0 ? -1 : 1;
-
-  player.vx = input.moveDirectionX * FLY_SPEED;
-  player.vy = input.moveDirectionY * FLY_SPEED;
-
-  player.x += player.vx * dt;
-  player.y += player.vy * dt;
-
-  player.x = Math.max(0, Math.min(ROOM.width - PLAYER.width, player.x));
-  player.y = Math.max(-PLAYER.height * 2, Math.min(MAP_HEIGHT - PLAYER.height, player.y));
-
-  player.fallStartY = null;
-  player.isFalling = false;
-}
+// flying input removed
 
 function applyWorldBounds(player: JumpPlayer) {
   if (player.y < -PLAYER.height * 2) {
@@ -327,10 +303,7 @@ export function updatePlayer(
 
   updateTimers(player, dt);
 
-  if (input.flyEnabled) {
-    applyFlyMovement(player, input, dt);
-    return;
-  }
+  // flying input removed
 
   applyInput(player, input, dt);
   applyBufferedJump(player, input);

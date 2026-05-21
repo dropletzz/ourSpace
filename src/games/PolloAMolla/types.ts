@@ -39,7 +39,6 @@ export type PlayerInput = {
   moveDirectionX: number;
   moveDirectionY: number;
   jumpHeld: boolean;
-  flyEnabled: boolean;
 };
 
 export type JumpPlayer = {

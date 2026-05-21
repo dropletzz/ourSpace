@@ -15,7 +15,6 @@ type PolloClientMsg = {
   moveDirectionX: number;
   moveDirectionY: number;
   jumpHeld: boolean;
-  flyEnabled: boolean;
 };
 
 type PolloServerMsg = {
@@ -47,12 +46,11 @@ function readInput(payload: PolloClientMsg | any): PlayerInput | null {
     moveDirectionX: typeof payload.moveDirectionX === "number" ? payload.moveDirectionX : 0,
     moveDirectionY: typeof payload.moveDirectionY === "number" ? payload.moveDirectionY : 0,
     jumpHeld: payload.jumpHeld === true,
-    flyEnabled: payload.flyEnabled === true,
   };
 }
 
 function defaultInput(): PlayerInput {
-  return { moveDirectionX: 0, moveDirectionY: 0, jumpHeld: false, flyEnabled: false };
+  return { moveDirectionX: 0, moveDirectionY: 0, jumpHeld: false };
 }
 
 export class PolloAMollaServer extends GameServer {
@@ -208,7 +206,6 @@ export class PolloAMollaClient extends GameClient {
           moveDirectionX: 0,
           moveDirectionY: 0,
           jumpHeld: false,
-          flyEnabled: false,
         },
       ];
     }
@@ -218,7 +215,6 @@ export class PolloAMollaClient extends GameClient {
         moveDirectionX: this.userInput.moveDirectionX,
         moveDirectionY: this.userInput.moveDirectionY,
         jumpHeld: this.userInput.moveDirectionY < 0,
-        flyEnabled: this.userInput.flyEnabled,
       },
     ];
   }

@@ -36,7 +36,7 @@ export const GAMES: Record<string, GameInfo> = {
     server: PolloAMollaServer,
     name: "Pollo A Molla",
     minPlayers: 1,
-    maxPlayers: 2,
+    maxPlayers: 20,
   },
   brawl: {
     client: BrawlClient,
