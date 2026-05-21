@@ -310,7 +310,7 @@ const SPEED_PADS: SpeedPad[] = [
 ];
 
 const GIRI_GARA         = 3;
-const DURATA_QUALIFICHE = 120;  // due minuti: abbastanza per un giro lanciato senza rendere la lobby lenta
+const DURATA_QUALIFICHE = 60;  // un minuto: abbastanza per un giro lanciato senza rendere la lobby lenta
 const DURATA_VOTO       = 10;
 const DURATA_RECAP      = 8;    // secondi schermata griglia
 const DURATA_PARTENZA   = 4;    // secondi semaforo (4 luci, 1 per secondo)
