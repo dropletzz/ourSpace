@@ -5,59 +5,73 @@ import { UserInput } from '../client/user-input';
 
 // ═══════════════════════════════════════════════════════════════
 //  COSTANTI
+//  Tutte le misure sono in pixel virtuali; il client scala in base alla risoluzione.
 // ═══════════════════════════════════════════════════════════════
 
-// Canvas virtuale: tutto il codice usa queste unità.
-// Il client scala al viewport reale → risoluzione dinamica garantita.
+// Campo e porte.
 const CW  = 1000;
 const CH  = 500;
-const GY  = 348;   // Y del suolo
-const GW  = 75;    // larghezza porta
-const GTY = 72;    // Y cima porta
-const GPT = 10;    // spessore pali
+const GY  = 348;
+const GW  = 75;
+const GTY = 72;
+const GPT = 10;
 
-// Hitbox giocatore
+// Hitbox giocatore.
 const PW = 68;
 const PH = 96;
 
-// Fisica palla
-const BR      = 22;     // raggio
-const B_GRAV  = 1900;   // gravità (px/s²)
-const B_BSX   = 0.88;   // attenuazione rimbalzo laterale
-const B_BTY   = 0.98;   // attenuazione rimbalzo traversa/palo
-const B_BGR   = 0.82;   // attenuazione rimbalzo a terra
-const B_FRIC  = 0.988;  // attrito orizzontale a terra
-const B_VSTOP = 18;     // soglia vy sotto cui non rimbalzare
-const B_KVX   = 320;    // kickoff vx
-const B_KVY   = -480;   // kickoff vy
+// Fisica palla (tuning per traiettoria più "morbida" rispetto al player).
+const BR      = 22;
+const B_GRAV  = 1900;
+const B_BSX   = 0.88;
+const B_BTY   = 0.98;
+const B_BGR   = 0.82;
+const B_FRIC  = 0.988;
+const B_VSTOP = 18;
+const B_KVX   = 320;
+const B_KVY   = -480;
 
-// Fisica giocatore
-const P_SPEED  = 390;    // velocità orizzontale (px/s)
-const P_JUMP_V = -1180;  // impulso salto (px/s, negativo = verso l'alto)
-const P_GRAV   = 3600;   // gravità giocatore (px/s²)
+// Fisica player (gravità più alta per reattività).
+const P_SPEED  = 390;
+const P_JUMP_V = -1180;
+const P_GRAV   = 3600;
 
-// Durate partita
-const CD_MS    = 3000;   // durata countdown pre-partita (ms)
-const MATCH_MS = 90000;  // durata partita (ms)
+// Durate (ms). Countdown breve, partita compatta, pausa post-goal per feedback visivo.
+const CD_MS          = 3000;
+const MATCH_MS       = 90000;
+const GOAL_PAUSE_MS  = 2000;
+const RESULT_EXIT_MS = 2500;
 
-// ── Teleport ──────────────────────────────────────────────────
-const TP_DIST  = 180;    // distanza scatto (px)
-const TP_CD_MS = 10000;  // cooldown (10s)
+// Goal animation (feedback visivo e uditivo quando segna).
+const SLOWMO_DURATION     = 500;     // Rallenta il tempo per 0.5s
+const GOAL_TEXT_DURATION  = 2000;    // Durata animazione testo GOAL!
+const MENU_BUTTON_DELAY   = 3000;    // Tasto "Gioca!" attivo dopo 3s
+const CAMERA_ZOOM_SCALE   = 1.3;     // Zoom massimo (1.3x)
+const CAMERA_SHAKE_INTENS = 8;       // Intensità shake camera
+const PARTICLE_COUNT      = 40;      // Numero confetti
+const PARTICLE_LIFETIME   = 2000;    // Durata particelle
 
-// ── Superpoteri bolla ─────────────────────────────────────────
-const BUBBLE_SPAWN_MS = 15000;  // intervallo tra un spawn e l'altro (ms)
-const BUBBLE_RADIUS   = 20;     // raggio bolla (px) — usato per raccolta e grafica
-const ICE_DUR_MS      = 3000;   // durata congelamento avversario (ms)
-const BH_DUR_MS       = 5000;   // durata big head (ms)
-const BH_HEAD_MULT    = 1.6;    // moltiplicatore raggio testa con big head
+// Teleport.
+const TP_CD_MS = 15000;
 
+// Powerup bolla (spawn fisso, ICE = debuff, BIG HEAD = buff).
+const BUBBLE_SPAWN_MS = 15000;
+const BUBBLE_RADIUS   = 20;
+const ICE_DUR_MS      = 3000;
+const BH_DUR_MS       = 5000;
+const BH_HEAD_MULT    = 1.6;
+
+// Fallback server-side per ID di personaggio non validi.
 const DEF_CHAR = 'classic';
 
+// Palette personaggi (id + colori UI).
 const CHARS = [
     { id: 'classic', name: 'Classic', accent: '#00d8ff', jersey: '#006dff', trim: '#ffffff' },
     { id: 'wizard',  name: 'Wizard',  accent: '#ffcf33', jersey: '#8b5cf6', trim: '#ffe680' },
     { id: 'ninja',   name: 'Ninja',   accent: '#28ff88', jersey: '#00a84f', trim: '#edfff5' },
 ];
+
+// Lookup veloce degli id validi.
 const CHAR_IDS = new Set(CHARS.map(c => c.id));
 
 // ═══════════════════════════════════════════════════════════════
@@ -65,98 +79,123 @@ const CHAR_IDS = new Set(CHARS.map(c => c.id));
 // ═══════════════════════════════════════════════════════════════
 
 type Seat        = 0 | 1;
+
 type Phase       = 'selection' | 'countdown' | 'playing' | 'finished';
+
 type PowerupType = 'ice' | 'bighead';
 
-/** Input inviato dal client al server ogni volta che cambia. */
+// Particella per effetto confetti al goal.
+interface Particle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    lifetime: number;      // Tempo rimanente (ms)
+    maxLifetime: number;   // Durata totale (ms)
+    rotation: number;      // Rotazione in radianti
+    rotVel: number;        // Velocità di rotazione
+}
+
 interface Inp {
-    moveX:    number;   // -1 sinistra | 0 fermo | 1 destra
-    jump:     boolean;  // W / ↑
-    teleport: boolean;  // F
+    moveX:    number;
+    jump:     boolean;
+    teleport: boolean;
 }
 
 interface Sel  { characterId: string; confirmed: boolean; }
+
 interface Ball { x: number; y: number; vx: number; vy: number; }
 
-/**
- * Bolla superpotere presente sul campo.
- * Creata dal server, raccolta quando un giocatore ci cammina sopra.
- */
 interface Bubble { x: number; y: number; type: PowerupType; }
 
-/** Stato completo di un giocatore — gestito dal server. */
 interface Ply {
     seat:        Seat;
     characterId: string;
-    x: number; y: number; vx: number; vy: number;
+    x: number; y: number;
+    vx: number; vy: number;
     w: number; h: number;
-    dir:       number;   // direzione sguardo: +1 destra, -1 sinistra
+    dir: number;
     onGround:  boolean;
-    jumpHeld:  boolean;  // true se W era già premuto al tick precedente
-    djUsed:    boolean;  // doppio salto già consumato in questa parabola?
-    tpHeld:    boolean;  // true se F era già premuto al tick precedente
+    jumpHeld:  boolean;  // edge detection salto
+    djUsed:    boolean;  // doppio salto consumato
+    tpHeld:    boolean;
     inp:       Inp;
-    // Cooldown e timer effetti (ms rimanenti; 0 = pronto/inattivo)
     tpCdMs:    number;
     frozenMs:  number;
     bigHeadMs: number;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  FACTORY FUNCTIONS
+//  FUNZIONI DI SUPPORTO (factory e utility)
 // ═══════════════════════════════════════════════════════════════
 
+// clamp: limita un valore nell'intervallo [lo, hi].
 const clamp  = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+// safeId: valida l'id inviato dal client e applica un fallback server-side.
 const safeId = (id: unknown): string =>
     (typeof id === 'string' && CHAR_IDS.has(id.trim())) ? id.trim() : DEF_CHAR;
 
+/**
+ * mkInp: input iniziale (nessun tasto premuto).
+ */
 function mkInp(): Inp {
     return { moveX: 0, jump: false, teleport: false };
 }
 
+/**
+ * mkBall: palla al centro con kickoff nella direzione di dir (-1/0/+1).
+ */
 function mkBall(dir = 0): Ball {
-    // dir: -1 kickoff verso sinistra, +1 verso destra, 0 fermo al centro
     return { x: CW / 2, y: GY - 160, vx: B_KVX * dir, vy: dir !== 0 ? B_KVY : 0 };
 }
 
+/**
+ * mkPlayer: spawna il giocatore nel lato relativo al seat con timer azzerati.
+ */
 function mkPlayer(seat: Seat, charId: string): Ply {
     return {
         seat, characterId: charId,
+        // Posizione iniziale: seat 0 parte a sinistra, seat 1 a destra
         x: seat === 0 ? 110 : CW - 110 - PW,
-        y: GY - PH,
+        y: GY - PH,       // posizionato appena sopra il suolo
         vx: 0, vy: 0, w: PW, h: PH,
-        dir: seat === 0 ? 1 : -1,
+        dir: seat === 0 ? 1 : -1,  // guarda verso il centro del campo
         onGround: true, jumpHeld: false, djUsed: false, tpHeld: false,
         inp: mkInp(),
+        // Tutti i timer a zero: nessun effetto attivo, teleport subito disponibile
         tpCdMs: 0, frozenMs: 0, bigHeadMs: 0,
     };
 }
 
-/** Genera una bolla in posizione casuale al centro del campo. */
+/**
+ * mkBubble: spawn 50/50 ICE/BIGHEAD in una zona sicura del campo.
+ */
 function mkBubble(): Bubble {
+    // Sceglie il tipo con probabilità 50%
     const type: PowerupType = Math.random() < 0.5 ? 'ice' : 'bighead';
+    // X casuale al centro del campo, lontana dalle porte e dai bordi
     const x = GW + 100 + Math.random() * (CW - GW * 2 - 200);
+    // Y casuale tra la traversa e il suolo, con un margine
     const y = GTY + 60  + Math.random() * (GY - GTY - 120);
     return { x, y, type };
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  COLLISIONI
+//  Queste funzioni gestiscono i rimbalzi e le collisioni della palla.
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Rimbalzo della palla su un rettangolo (palo, traversa).
- *
- * getCollisionSide(r1, r2) ritorna il lato di r2 penetrato da r1:
- *   "top"    → r1 viene dall'alto → spingi sopra r2, inverti vy in negativo
- *   "bottom" → r1 viene dal basso → spingi sotto r2, inverti vy in positivo
- *   "left"   → r1 viene da sinistra → spingi a sinistra, inverti vx in neg.
- *   "right"  → r1 viene da destra  → spingi a destra,   inverti vx in pos.
+ * ballVsRect: rimbalzo palla contro rettangolo (pali/traversa).
+ * Usa getCollisionSide sul bounding box per riflettere la velocità sul lato impattato.
  */
 function ballVsRect(b: Ball, r: { x: number; y: number; w: number; h: number }): boolean {
     const br   = { x: b.x - BR, y: b.y - BR, w: BR * 2, h: BR * 2 };
     const side = getCollisionSide(br, r);
+
     if (side === 'none') return false;
+
     if (side === 'top')    { b.y = r.y - BR;       b.vy = -Math.abs(b.vy) * B_BTY; }
     if (side === 'bottom') { b.y = r.y + r.h + BR; b.vy =  Math.abs(b.vy) * B_BTY; }
     if (side === 'left')   { b.x = r.x - BR;       b.vx = -Math.abs(b.vx) * B_BSX; }
@@ -165,87 +204,107 @@ function ballVsRect(b: Ball, r: { x: number; y: number; w: number; h: number }):
 }
 
 /**
- * Collisione circolare palla vs giocatore.
- * Due zone: TESTA (priorità) e PIEDE.
- * headRadius è parametrico per supportare il Big Head sia
- * fisicamente (server) che graficamente (client) con lo stesso valore.
+ * ballVsPlayer: collisione testa/piede con priorità alla testa.
+ * headRadius permette di allineare fisica e grafica (Big Head).
+ * Impone una velocità minima per evitare colpi troppo deboli.
  */
 function ballVsPlayer(b: Ball, p: Ply, headRadius: number): void {
     const cx = p.x + p.w / 2;
 
-    // ─ Testa ─────────────────────────────────
-    const hCY = p.y + p.h * 0.26;
-    const dxH = b.x - cx, dyH = b.y - hCY;
-    const dH  = Math.sqrt(dxH * dxH + dyH * dyH);
-    const hitH = dH < headRadius + BR;
+    const headCenterY = p.y + p.h * 0.35;
+    const dxH = b.x - cx;
+    const dyH = b.y - headCenterY;
+    const distHead = Math.sqrt(dxH * dxH + dyH * dyH);
+    const hitHead  = distHead < headRadius + BR;
 
-    // ─ Piede (solo se testa non colpita) ─────
-    // Evita di applicare due impulsi contemporaneamente.
-    const fR  = p.w * 0.20;
-    const fCY = p.y + p.h * 0.88;
-    const dxF = b.x - cx, dyF = b.y - fCY;
-    const dF  = Math.sqrt(dxF * dxF + dyF * dyF);
-    const hitF = !hitH && dF < fR + BR;
+    // Piede controllato solo se la testa non ha già colpito.
+    const footRadius   = p.w * 0.20;
+    const footCenterY  = p.y + p.h * 0.88;
+    const dxF = b.x - cx;
+    const dyF = b.y - footCenterY;
+    const distFoot = Math.sqrt(dxF * dxF + dyF * dyF);
+    const hitFoot  = !hitHead && distFoot < footRadius + BR;
 
-    if (!hitH && !hitF) return;
+    if (!hitHead && !hitFoot) return;
 
-    const pDir = p.seat === 0 ? 1 : -1;
-    const spd  = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+    const playerDir = p.seat === 0 ? 1 : -1;
+    const currentSpeed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
 
-    if (hitH) {
-        const s  = Math.max(dH, 0.001);
-        const nx = dxH / s, ny = dyH / s;
-        const sp = clamp(Math.max(560, spd), 560, 880);
-        b.vx = clamp(nx * sp * 0.50 + pDir * 0.18 * sp + p.vx * 0.15, -700, 700);
-        b.vy = clamp(Math.min(ny * sp * 0.50 + (ny < -0.3 ? -920 : -800), -640), -1050, -640);
-        // Correzione penetrazione: sposta la palla fuori dalla testa
-        b.x += nx * (headRadius + BR - dH);
-        b.y += ny * (headRadius + BR - dH);
+    if (hitHead) {
+        const safeD = Math.max(distHead, 0.001);
+        const nx = dxH / safeD;
+        const ny = dyH / safeD;
+        const newSpeed = clamp(Math.max(560, currentSpeed), 560, 880);
+
+        b.vx = clamp(nx * newSpeed * 0.50 + playerDir * 0.18 * newSpeed + p.vx * 0.15, -700, 700);
+        b.vy = clamp(Math.min(ny * newSpeed * 0.50 + (ny < -0.3 ? -920 : -800), -640), -1050, -640);
+
+        b.x += nx * (headRadius + BR - distHead);
+        b.y += ny * (headRadius + BR - distHead);
     } else {
-        const s  = Math.max(dF, 0.001);
-        const nx = dxF / s, ny = dyF / s;
-        const sp = clamp(Math.max(600, spd * 1.15), 600, 1000);
-        b.vx = clamp(nx * sp * 0.90 + pDir * sp * 0.25 + p.vx * 0.25, -1000, 1000);
-        b.vy = clamp(Math.min(ny * sp * 0.5 - 480, -350), -850, -350);
-        b.x += nx * (fR + BR - dF);
-        b.y += ny * (fR + BR - dF);
+        const safeD = Math.max(distFoot, 0.001);
+        const nx = dxF / safeD;
+        const ny = dyF / safeD;
+
+        const newSpeed = clamp(Math.max(600, currentSpeed * 1.15), 600, 1000);
+        b.vx = clamp(nx * newSpeed * 0.90 + playerDir * newSpeed * 0.25 + p.vx * 0.25, -1000, 1000);
+        b.vy = clamp(Math.min(ny * newSpeed * 0.5 - 480, -350), -850, -350);
+
+        b.x += nx * (footRadius + BR - distFoot);
+        b.y += ny * (footRadius + BR - distFoot);
     }
 }
 
-/** Rimbalzi della palla su pali e traversa della porta. */
+/**
+ * ballVsGoalFrame: rimbalzi su palo interno e traversa.
+ * Il palo frontale è "aperto" per permettere l'ingresso in porta.
+ */
 function ballVsGoalFrame(b: Ball, goalX: number, isLeft: boolean): void {
     const goalH = GY - GTY;
     const backX = isLeft ? goalX : goalX + GW - GPT;
-    ballVsRect(b, { x: backX, y: GTY, w: GPT, h: goalH }); // palo di fondo
-    ballVsRect(b, { x: goalX, y: GTY, w: GW,  h: GPT  }); // traversa
+    ballVsRect(b, { x: backX, y: GTY, w: GPT, h: goalH });
+    ballVsRect(b, { x: goalX, y: GTY, w: GW,  h: GPT  });
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  SERVER
+//  Authoritative: input → fase → fisica → snapshot.
 // ═══════════════════════════════════════════════════════════════
 
 export class HeadBallServer extends GameServer {
 
     private phase:  Phase = 'selection';
+
     private players: Record<string, Ply> = {};
-    private order:   string[] = [];   // order[seat] = clientId
+
+    private order:   string[] = [];
+
     private sels:    Sel[] = [
         { characterId: DEF_CHAR, confirmed: false },
         { characterId: DEF_CHAR, confirmed: false },
     ];
+
     private ball:   Ball   = mkBall();
+
     private score          = { left: 0, right: 0 };
+
     private timeMs         = MATCH_MS;
+
     private cdMs           = CD_MS;
+
     private winner: 'left' | 'right' | 'draw' | null = null;
 
-    // Bolla attualmente sul campo (null = nessuna)
     private bubble:        Bubble | null = null;
-    // Conto alla rovescia fino al prossimo spawn (ms)
+
     private bubbleSpawnMs: number = BUBBLE_SPAWN_MS;
+    // Pausa temporanea post-goal (blocca fisica e timer).
+    private goalPauseMs: number = 0;
+    // Evento goal da segnalare al client (pulito dopo l'invio nello snapshot).
+    private goalEvent: { scorer: Seat } | null = null;
 
-    // ── Lifecycle ────────────────────────────────────────────────
+    // ── Lifecycle (metodi chiamati dal framework) ────────────────────────────
 
+    /** init: reset stato iniziale partita. */
     init(players: Record<string, any>): void {
         this.order  = Object.keys(players);
         this.phase  = 'selection';
@@ -259,29 +318,33 @@ export class HeadBallServer extends GameServer {
         this.ball          = mkBall();
         this.bubble        = null;
         this.bubbleSpawnMs = BUBBLE_SPAWN_MS;
+        this.goalPauseMs   = 0;
+        this.goalEvent     = null;
     }
 
+    /** tick: loop server (input → fase → snapshot). */
     tick(msgs: IncomingMsg[], dt: number): OutgoingMsg[] {
         this.processMessages(msgs);
         this.updatePhase(dt);
-        // Nessun clientId = broadcast a tutti i client connessi
         return [{ payload: this.buildSnapshot() }];
     }
 
-    /**
-     * Il server dichiara la partita terminata.
-     * Il framework ferma il loop e chiude la lobby.
-     */
+    /** isFinished: il framework chiude il game loop quando la partita è finita. */
     isFinished(): boolean {
         return this.phase === 'finished';
     }
 
-    // ── Messaggi in arrivo ────────────────────────────────────────
+    // ── Elaborazione messaggi in arrivo dai client ────────────────────────────
 
+    /**
+     * processMessages: applica input e selezione validando i dati client.
+     * selection → countdown solo quando entrambi confermano.
+     */
     private processMessages(msgs: IncomingMsg[]): void {
         for (const msg of msgs) {
             const p   = this.players[msg.clientId];
             if (!p) continue;
+
             const pay  = msg.payload;
             const seat = p.seat;
 
@@ -292,9 +355,11 @@ export class HeadBallServer extends GameServer {
                     teleport: typeof pay.teleport === 'boolean' ? pay.teleport : p.inp.teleport,
                 };
             }
+
             if (pay.kind === 'selection:update' && this.phase === 'selection' && !this.sels[seat].confirmed) {
                 this.sels[seat].characterId = safeId(pay.characterId);
             }
+
             if (pay.kind === 'selection:confirm' && this.phase === 'selection' && !this.sels[seat].confirmed) {
                 this.sels[seat].characterId = safeId(pay.characterId ?? this.sels[seat].characterId);
                 this.sels[seat].confirmed   = true;
@@ -303,49 +368,74 @@ export class HeadBallServer extends GameServer {
         }
     }
 
-    // ── Transizioni di fase ──────────────────────────────────────
+    // ── Gestione delle transizioni di fase ──────────────────────────────────
 
+    /** updatePhase: gestisce countdown, match timer e pausa post-goal. */
     private updatePhase(dt: number): void {
         if (this.phase === 'countdown') {
             this.cdMs -= dt * 1000;
             if (this.cdMs <= 0) this.goPlaying();
         }
         if (this.phase === 'playing') {
+            if (this.goalPauseMs > 0) {
+                this.goalPauseMs = Math.max(0, this.goalPauseMs - dt * 1000);
+                return; // pausa post-goal: blocca fisica e timer partita
+            }
             this.timeMs -= dt * 1000;
             if (this.timeMs <= 0) this.goFinished();
             else                  this.physics(dt);
         }
-        // In 'selection' e 'finished' non aggiorniamo nulla
     }
 
+    /** goCountdown: reset stato e avvia il countdown. */
     private goCountdown(): void {
-        this.phase  = 'countdown'; this.cdMs = CD_MS;
-        this.score  = { left: 0, right: 0 }; this.winner = null;
+        this.phase  = 'countdown';
+        this.cdMs   = CD_MS;
+        this.score  = { left: 0, right: 0 };
+        this.winner = null;
         this.ball   = mkBall();
-        this.bubble = null; this.bubbleSpawnMs = BUBBLE_SPAWN_MS;
+        this.bubble = null;
+        this.bubbleSpawnMs = BUBBLE_SPAWN_MS;
+        this.goalPauseMs = 0;
         this.order.forEach((id, i) => { this.players[id] = mkPlayer(i as Seat, this.sels[i].characterId); });
     }
 
+    /** goPlaying: avvia la partita con kickoff casuale. */
     private goPlaying(): void {
-        this.phase  = 'playing'; this.timeMs = MATCH_MS;
+        this.phase  = 'playing';
+        this.timeMs = MATCH_MS;
         this.ball   = mkBall(Math.random() < 0.5 ? -1 : 1);
+        this.goalPauseMs = 0;
         this.order.forEach((id, i) => { this.players[id] = mkPlayer(i as Seat, this.sels[i].characterId); });
     }
 
+    /**
+     * resetAfterGoal: reset posizioni, kickoff verso chi ha subito il gol.
+     * I timer degli effetti restano attivi e parte la pausa post-goal.
+     */
     private resetAfterGoal(scoringSeat: Seat): void {
-        // La palla torna al centro con kickoff verso chi ha subito il gol
         this.ball = mkBall(scoringSeat === 0 ? -1 : 1);
+
         this.order.forEach((id, i) => {
-            // Salviamo il cooldown del teleport PRIMA di ricreare il giocatore:
-            // mkPlayer() azzererebbe tpCdMs, ma dopo un goal il cooldown deve
-            // continuare a scorrere — il giocatore non deve essere "premiato"
-            // con un reset gratuito solo perché è stato segnato un punto.
-            const prevTpCd = this.players[this.order[i]]?.tpCdMs ?? 0;
+            const prev = this.players[this.order[i]];
+
+            const savedTpCooldown = prev?.tpCdMs    ?? 0;
+            const savedTpHeld     = prev?.tpHeld    ?? false;
+            const savedBigHead    = prev?.bigHeadMs ?? 0;
+            const savedFrozen     = prev?.frozenMs  ?? 0;
+
             this.players[this.order[i]] = mkPlayer(i as Seat, this.sels[i].characterId);
-            this.players[this.order[i]].tpCdMs = prevTpCd;
+
+            this.players[this.order[i]].tpCdMs    = savedTpCooldown;
+            this.players[this.order[i]].tpHeld    = savedTpHeld;
+            this.players[this.order[i]].bigHeadMs = savedBigHead;
+            this.players[this.order[i]].frozenMs  = savedFrozen;
         });
+        this.goalPauseMs = GOAL_PAUSE_MS;
+        this.goalEvent   = { scorer: scoringSeat };
     }
 
+    /** goFinished: calcola il vincitore e chiude la partita. */
     private goFinished(): void {
         this.phase  = 'finished';
         this.winner = this.score.left > this.score.right ? 'left'
@@ -353,8 +443,9 @@ export class HeadBallServer extends GameServer {
                     : 'draw';
     }
 
-    // ── Motore fisico ────────────────────────────────────────────
+    // ── Motore fisico ────────────────────────────────────────────────────────
 
+    /** physics: aggiorna player, palla e bolle (solo in fase playing). */
     private physics(dt: number): void {
         const dtMs = dt * 1000;
 
@@ -362,12 +453,11 @@ export class HeadBallServer extends GameServer {
             const p = this.players[this.order[seat]];
             if (!p) return;
 
-            // Tick timer effetti e cooldown (decremento con floor a 0)
             p.tpCdMs   = Math.max(0, p.tpCdMs   - dtMs);
             p.frozenMs  = Math.max(0, p.frozenMs  - dtMs);
             p.bigHeadMs = Math.max(0, p.bigHeadMs - dtMs);
 
-            // Se congelato: nessun input, solo gravità per tenerlo a terra
+            // Congelato: solo gravità, niente input.
             if (p.frozenMs > 0) {
                 p.vx  = 0;
                 p.vy += P_GRAV * dt;
@@ -378,16 +468,21 @@ export class HeadBallServer extends GameServer {
 
             this.applyInput(p, dt);
 
-            // Integrazione posizione con delta time
             p.vy += P_GRAV * dt;
             p.x  += p.vx * dt;
             p.y  += p.vy * dt;
 
-            // Collisioni con i bordi del campo
-            if (p.y >= GY - p.h) { p.y = GY - p.h; p.vy = 0; p.onGround = true; p.djUsed = false; }
-            else                  { p.onGround = false; }
+            if (p.y >= GY - p.h) {
+                p.y = GY - p.h;
+                p.vy = 0;
+                p.onGround = true;
+                p.djUsed   = false; // reset doppio salto su atterraggio
+            } else {
+                p.onGround = false;
+            }
+
             if (p.y < 0) { p.y = 0; if (p.vy < 0) p.vy = 0; }
-            // Il giocatore non entra nella zona porta
+
             if (p.x < GW)           { p.x = GW;           p.vx = 0; }
             if (p.x > CW - GW - PW) { p.x = CW - GW - PW; p.vx = 0; }
         });
@@ -397,46 +492,34 @@ export class HeadBallServer extends GameServer {
     }
 
     /**
-     * Applica l'input del giocatore alla sua velocità e gestisce
-     * il salto (con doppio salto) e il Teleport.
+     * applyInput: movimento, salto (edge detection) e teleport.
+     * Il teleport posiziona il player tra sé e la palla e clampa ai bordi.
      */
     private applyInput(p: Ply, dt: number): void {
         const inp = p.inp;
 
-        // Movimento orizzontale — velocità costante nella direzione premuta
         p.vx = inp.moveX * P_SPEED;
         if (inp.moveX !== 0) p.dir = inp.moveX > 0 ? 1 : -1;
 
-        // ── Salto con doppio salto ────────────────────────────────
-        // Usiamo il "fronte di salita" del tasto (jumpHeld):
-        // il salto si attiva solo alla pressione, non tenendo premuto.
-        // Questo permette il doppio salto senza consumarlo subito.
         if (inp.jump && !p.jumpHeld) {
             if (p.onGround) {
-                // Primo salto da terra
                 p.vy = P_JUMP_V;
                 p.onGround = false;
                 p.djUsed   = false;
             } else if (!p.djUsed) {
-                // Doppio salto in aria (disponibile una volta sola per parabola)
                 p.vy     = P_JUMP_V;
                 p.djUsed = true;
             }
         }
-        p.jumpHeld = inp.jump; // salva lo stato per il prossimo tick
+        p.jumpHeld = inp.jump;
 
-        // ── Teleport ─────────────────────────────────────────────
-        // Scatto di TP_DIST px nella direzione del movimento.
-        // Il giocatore si teletrasporta TRA SÉ E LA PALLA:
-        //   P1 (seat 0, porta sinistra): si posiziona a sinistra della palla
-        //   P2 (seat 1, porta destra):   si posiziona a destra della palla
-        // Così si interpone sempre tra la palla e la propria porta.
         if (inp.teleport && !p.tpHeld && p.tpCdMs <= 0) {
-            const offset = BR + p.w / 2 + 8;  // margine per non sovrapporre la palla
-            const destX  = p.seat === 0
-                ? this.ball.x - offset - p.w / 2  // P1: a sinistra della palla
-                : this.ball.x + offset - p.w / 2; // P2: a destra della palla
-            p.x      = clamp(destX, GW, CW - GW - p.w);
+            const offset = BR + p.w / 2 + 8;
+            const destinazioneX  = p.seat === 0
+                ? this.ball.x - offset - p.w / 2
+                : this.ball.x + offset - p.w / 2;
+
+            p.x      = clamp(destinazioneX, GW, CW - GW - p.w);
             p.y      = clamp(this.ball.y - p.h / 2, 0, GY - p.h);
             p.vx     = 0;
             p.vy     = 0;
@@ -445,8 +528,12 @@ export class HeadBallServer extends GameServer {
         p.tpHeld = inp.teleport;
     }
 
-    // ── Palla ─────────────────────────────────────────────────────
+    // ── Fisica della palla ──────────────────────────────────────────────────
 
+    /**
+     * updateBall: integra la fisica della palla e gestisce goal/collisioni.
+     * Ordine: integrazione → goal → rimbalzi → collisioni player/porta.
+     */
     private updateBall(dt: number): void {
         const b = this.ball;
 
@@ -454,10 +541,7 @@ export class HeadBallServer extends GameServer {
         b.x  += b.vx * dt;
         b.y  += b.vy * dt;
 
-        // ── Rilevamento gol ───────────────────────────────────────
-        // Usiamo il CENTRO della palla: se supera la linea di porta
-        // mentre è nella zona altezza corretta → gol istantaneo.
-        // Questo impedisce alla palla di "incastrarsi" dentro la porta.
+        // Goal: usa il centro della palla e limita l'altezza alla zona porta.
         const inGoalZone = b.y > GTY + GPT && b.y < GY;
 
         if (b.x < GW && inGoalZone) {
@@ -467,101 +551,89 @@ export class HeadBallServer extends GameServer {
             this.score.left  += 1; this.resetAfterGoal(0); return;
         }
 
-        // Bordi campo (disattivati nella zona porta per non bloccare il gol)
         if (b.x - BR <= 0 && !inGoalZone)  { b.x = BR;       b.vx =  Math.abs(b.vx) * B_BSX; }
         if (b.x + BR >= CW && !inGoalZone) { b.x = CW - BR;  b.vx = -Math.abs(b.vx) * B_BSX; }
         if (b.y - BR <= 0) { b.y = BR; b.vy = Math.abs(b.vy) * B_BTY; }
+
         if (b.y + BR >= GY) {
             b.y   = GY - BR;
             b.vy *= -B_BGR;
+
             if (Math.abs(b.vy) < B_VSTOP) b.vy = 0;
+
             b.vx *= Math.pow(B_FRIC, dt * 60);
         }
 
-        // Collisioni palla vs giocatori
         ([0, 1] as Seat[]).forEach(seat => {
             const p = this.players[this.order[seat]];
             if (!p) return;
-            // Il raggio fisico della testa dipende dal superpotere Big Head
             const headR = p.w * 0.48 * (p.bigHeadMs > 0 ? BH_HEAD_MULT : 1);
             ballVsPlayer(b, p, headR);
         });
 
-        // Rimbalzi pali/traversa (solo fuori dalla zona gol)
         if (!inGoalZone) {
             ballVsGoalFrame(b, 0, true);
             ballVsGoalFrame(b, CW - GW, false);
         }
     }
 
-    // ── Bolle superpotere ─────────────────────────────────────────
+    // ── Bolle superpotere ────────────────────────────────────────────────────
 
     /**
-     * Logica spawn e raccolta bolle:
-     * 1. Se non c'è nessuna bolla → decrementa il timer.
-     * 2. Quando il timer scade → spawna una bolla casuale.
-     * 3. Se un giocatore tocca la bolla → applica effetto,
-     *    rimuovi la bolla, resetta il timer per il prossimo spawn.
+     * updateBubble: spawn e raccolta powerup (AABB circle test).
+     * Un solo pickup per tick per evitare doppie raccolte.
      */
     private updateBubble(dt: number): void {
         const dtMs = dt * 1000;
 
         if (this.bubble === null) {
-            // Nessuna bolla presente: aspetta il timer
             this.bubbleSpawnMs -= dtMs;
             if (this.bubbleSpawnMs <= 0) {
-                this.bubble = mkBubble(); // spawn!
+                this.bubble = mkBubble();
             }
             return;
         }
 
-        // Bolla presente: controlla raccolta (cerchio vs rettangolo AABB)
         const bub = this.bubble;
         for (const seat of [0, 1] as Seat[]) {
             const p = this.players[this.order[seat]];
             if (!p) continue;
 
-            // Punto del rettangolo giocatore più vicino al centro bolla
-            const nearX = clamp(bub.x, p.x, p.x + p.w);
-            const nearY = clamp(bub.y, p.y, p.y + p.h);
-            const dx    = bub.x - nearX;
-            const dy    = bub.y - nearY;
+            const puntoVicinoX = clamp(bub.x, p.x, p.x + p.w);
+            const puntoVicinoY = clamp(bub.y, p.y, p.y + p.h);
+
+            const dx = bub.x - puntoVicinoX;
+            const dy = bub.y - puntoVicinoY;
 
             if (dx * dx + dy * dy < BUBBLE_RADIUS * BUBBLE_RADIUS) {
-                // Raccolta! Applica effetto, rimuovi bolla, resetta timer
                 this.applyBubble(p, seat, bub.type);
                 this.bubble        = null;
-                this.bubbleSpawnMs = BUBBLE_SPAWN_MS; // nuovo timer 15s
+                this.bubbleSpawnMs = BUBBLE_SPAWN_MS;
                 break;
             }
         }
     }
 
-    /**
-     * Applica l'effetto della bolla raccolta.
-     * ICE:     congela l'AVVERSARIO per ICE_DUR_MS.
-     * BIGHEAD: ingrandisce la testa del RACCOGLITORE per BH_DUR_MS.
-     */
+    /** applyBubble: ICE congela l'avversario, BIGHEAD potenzia il raccoglitore. */
     private applyBubble(p: Ply, seat: Seat, type: PowerupType): void {
         if (type === 'ice') {
-            const oppId = this.order[1 - seat as Seat];
-            if (oppId && this.players[oppId]) {
-                this.players[oppId].frozenMs = ICE_DUR_MS;
+            const avversarioId = this.order[1 - seat as Seat];
+            if (avversarioId && this.players[avversarioId]) {
+                this.players[avversarioId].frozenMs = ICE_DUR_MS;
             }
         } else {
             p.bigHeadMs = BH_DUR_MS;
         }
     }
 
-    // ── Snapshot ─────────────────────────────────────────────────
+    // ── Costruzione dello snapshot ──────────────────────────────────────────
 
     /**
-     * Costruisce il payload inviato ai client ogni tick.
-     * Contiene tutto ciò che serve per il rendering.
+     * buildSnapshot: pacchetto minimale per rendering client (no input privati).
      */
     private buildSnapshot(): object {
         const active = this.phase === 'playing' || this.phase === 'finished';
-        return {
+        const snapshot = {
             phase:   this.phase,
             score:   { ...this.score },
             timeMs:  Math.max(0, Math.round(this.phase === 'countdown' ? this.cdMs : this.timeMs)),
@@ -581,16 +653,25 @@ export class HeadBallServer extends GameServer {
             sels:          this.sels.map(s => ({ ...s })),
             winner:        this.winner,
         };
+
+        // Aggiungi goal event se presente e puliscilo per il prossimo tick.
+        if (this.goalEvent) {
+            (snapshot as any).goalEvent = this.goalEvent;
+            this.goalEvent = null;
+        }
+
+        return snapshot;
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  CLIENT
+//  Rendering + input: tutta la logica resta sul server.
 // ═══════════════════════════════════════════════════════════════
 
 export class HeadBallClient extends GameClient {
 
-    // ── Stato ricevuto dal server ─────────────────────────────────
+    // ── Stato ricevuto dagli snapshot del server ──────────────────────────────
     private phase         = 'selection';
     private sPlayers:  any[]       = [];
     private ball:      any         = null;
@@ -601,90 +682,119 @@ export class HeadBallClient extends GameClient {
     private mySeat        = -1;
     private bubble:    any         = null;
     private bubbleSpawnMs = BUBBLE_SPAWN_MS;
+    // Timestamp (clock locale in secondi) in cui compare il risultato.
+    private finishedAt: number | null = null;
 
-    // ── Selezione personaggio ─────────────────────────────────────
+    // ── Stato selezione personaggio ──────────────────────────────────────────
     private charIdx   = 0;
     private confirmed = false;
 
-    // ── Diff input: inviamo solo quando qualcosa cambia ───────────
+    // ── Stato input precedente (selezione) ────────────────────────────────────
     private prev        = { moveX: 0, jump: false, teleport: false };
     private prevSelX    = 0;
     private prevConfirm = false;
 
-    // ── Tasti extra non gestiti da UserInput ──────────────────────
-    // UserInput del prof gestisce solo W/A/S/D.
-    // Frecce, Enter e F vengono intercettati direttamente.
+    // ── Tasti extra non gestiti da UserInput ──────────────────────────────────
     private keys: Record<string, boolean> = {};
 
-    // ── Manuale di gioco ──────────────────────────────────────────
-    // true finché il giocatore non clicca "Gioca!".
+    // ── Manuale di gioco ──────────────────────────────────────────────────────
     private showManual = true;
+
+    // ── Animazione goal ───────────────────────────────────────────────────────
+    private goalScoredAt: number | null = null;    // Clock quando segna
+    private goalScorer: Seat | null = null;        // Chi ha segnato (0=left, 1=right)
+    private particles: Particle[] = [];             // Confetti attivi
+    private isGoalAnimating = false;               // Lock durante animazione
+    private goalSlowmoUntil = 0;                   // Clock fino a cui rallentare
+    private goalShakeDecay = 0;                    // Decremento shake (ms rimanenti)
+    private audioContext: AudioContext | null = null; // Web Audio
 
     private clock  = 0;
     private outbox: any[] = [];
 
-    // Trasformazione canvas virtuale → schermo
     private fit = 1;
     private ox  = 0;
     private oy  = 0;
 
+    /** Costruttore: registra input e click sul manuale. */
     constructor(ui: UserInput, myId: string) {
         super(ui, myId);
         this.registerKeys();
         this.registerManualClick(ui);
     }
 
-    /** Registra i tasti che UserInput non gestisce (frecce, Enter, F). */
+    // Arrow function per mantenere lo stesso riferimento nei removeEventListener.
+    private onKeyDown = (e: KeyboardEvent) => { if (!e.repeat) this.keys[e.code] = true;  };
+    private onKeyUp   = (e: KeyboardEvent) => { this.keys[e.code] = false; };
+    private onBlur    = ()  => { Object.keys(this.keys).forEach(k => { this.keys[k] = false; }); };
+
+    /** registerKeys: listener tastiera + blur. */
     private registerKeys(): void {
-        document.addEventListener('keydown', (e) => { if (!e.repeat) this.keys[e.code] = true;  });
-        document.addEventListener('keyup',   (e) => { this.keys[e.code] = false; });
-        window.addEventListener('blur',      ()  => {
-            // Rilascia tutti i tasti quando la finestra perde il focus
-            Object.keys(this.keys).forEach(k => { this.keys[k] = false; });
-        });
+        document.addEventListener('keydown', this.onKeyDown);
+        document.addEventListener('keyup',   this.onKeyUp);
+        window.addEventListener('blur',      this.onBlur);
+    }
+
+    /** cleanup: rimuove i listener per evitare leak. */
+    cleanup(): void {
+        document.removeEventListener('keydown', this.onKeyDown);
+        document.removeEventListener('keyup',   this.onKeyUp);
+        window.removeEventListener('blur',      this.onBlur);
     }
 
     /**
-     * Registra il click sul canvas per chiudere il manuale.
-     * Converte le coordinate schermo → coordinate virtuali per
-     * verificare se il click è caduto sul pulsante "Gioca!".
+     * registerManualClick: converte coordinate reali → virtuali per chiudere il manuale.
      */
     private registerManualClick(ui: UserInput): void {
         ui.canvas.addEventListener('click', (e) => {
-            if (!this.showManual) return;
+            if (!this.showManual) return;  // se il manuale non è aperto, ignoriamo
+
+            // Otteniamo la posizione del canvas nel DOM
             const bounds = ui.canvas.getBoundingClientRect();
+            // Convertiamo le coordinate del click in pixel del canvas
             const rawX   = (e.clientX - bounds.left) * (ui.canvas.width  / bounds.width);
             const rawY   = (e.clientY - bounds.top)  * (ui.canvas.height / bounds.height);
-            // Converti in coordinate virtuali (inverse della trasformazione di draw)
+
+            // Convertiamo da pixel canvas a coordinate virtuali
+            // (invertiamo la trasformazione: scala + offset applicata in draw())
             const vx     = (rawX - this.ox) / this.fit;
             const vy     = (rawY - this.oy) / this.fit;
-            // Area del pulsante "Gioca!" — deve combaciare con drawManual()
+
+            // Area del pulsante "Gioca!" — deve essere IDENTICA a quella disegnata in drawManual()
             const bw = 180, bh = 48;
             const bx = CW / 2 - bw / 2, by = CH * 0.78;
+
+            // Se il click è dentro l'area del pulsante → chiudiamo il manuale
             if (vx >= bx && vx <= bx + bw && vy >= by && vy <= by + bh) {
                 this.showManual = false;
             }
         });
     }
 
+    /** init: risolve il seat del client in base all'ordine dei player. */
     async init(players: Record<string, any>): Promise<void> {
         this.mySeat = Object.keys(players).indexOf(this.myId);
         return Promise.resolve();
     }
 
-    // ── Ciclo principale ──────────────────────────────────────────
+    // ── Ciclo principale ──────────────────────────────────────────────────────
 
+    /**
+     * draw: loop di rendering. Calcola scala, legge input e disegna i layer.
+     */
     draw(ctx: CanvasRenderingContext2D, dt: number): void {
         const { screenW, screenH } = this.userInput;
 
-        // Calcola la scala per adattare il canvas virtuale al viewport
-        // mantenendo le proporzioni (letterbox/pillarbox)
         this.fit = Math.min(screenW / CW, screenH / CH);
         this.ox  = (screenW - CW * this.fit) / 2;
         this.oy  = (screenH - CH * this.fit) / 2;
         this.clock += dt;
 
-        // Input bloccato finché il manuale è aperto
+        // Aggiorna particelle e shake
+        this.updateGoalParticles(dt);
+        this.updateGoalShake();
+
+        // Input bloccato finché il manuale è aperto.
         if (!this.showManual) this.readInput();
 
         ctx.fillStyle = '#07111c';
@@ -693,6 +803,13 @@ export class HeadBallClient extends GameClient {
         ctx.save();
         ctx.translate(this.ox, this.oy);
         ctx.scale(this.fit, this.fit);
+
+        // Applica effetti camera (zoom + shake)
+        const { zoomScale, shakeX, shakeY } = this.computeGoalCameraEffects();
+        ctx.translate(CW / 2, CH / 2);
+        ctx.scale(zoomScale, zoomScale);
+        ctx.translate(-CW / 2 + shakeX, -CH / 2 + shakeY);
+
         ctx.beginPath(); ctx.rect(0, 0, CW, CH); ctx.clip();
 
         this.drawBackground(ctx);
@@ -708,15 +825,25 @@ export class HeadBallClient extends GameClient {
 
         this.drawHUD(ctx);
 
+        // Disegna particelle goal
+        if (this.particles.length > 0) this.drawGoalParticles(ctx);
+
         if (this.phase === 'selection' || this.phase === 'waiting') this.drawSelection(ctx);
         if (this.phase === 'finished')                               this.drawResult(ctx);
 
-        // Il manuale viene disegnato sopra a tutto
         if (this.showManual) this.drawManual(ctx);
+
+        // Disegna testo GOAL!
+        if (this.goalScoredAt !== null && this.isGoalAnimating) {
+            this.drawGoalText(ctx);
+        }
 
         ctx.restore();
     }
 
+    /**
+     * handleMessage: aggiorna lo stato client usando snapshot server.
+     */
     handleMessage(msg: any): void {
         if (!msg) return;
         if ('phase'         in msg) this.phase         = msg.phase;
@@ -728,39 +855,55 @@ export class HeadBallClient extends GameClient {
         if ('winner'        in msg) this.winner        = msg.winner;
         if ('bubble'        in msg) this.bubble        = msg.bubble;
         if ('bubbleSpawnMs' in msg) this.bubbleSpawnMs = msg.bubbleSpawnMs;
+
+        // Evento goal: trigger animazione
+        if ('goalEvent' in msg && msg.goalEvent) {
+            this.onGoalScored(msg.goalEvent.scorer);
+        }
+
+        // Latch del momento in cui entriamo nella fase "finished".
+        // Usare il clock locale evita dipendenze su timeMs del server (che arriva già a 0).
+        const hasResult = this.phase === 'finished' && this.winner !== null;
+        if (hasResult && this.finishedAt === null) this.finishedAt = this.clock;
+        if (!hasResult) this.finishedAt = null;
     }
 
+    /**
+     * flushMessages: restituisce tutti i messaggi in coda e svuota la coda.
+     * Viene chiamato dal framework per raccogliere i messaggi da inviare al server.
+     * Lo spread [...this.outbox] crea una copia prima di svuotare l'originale.
+     */
     flushMessages(): any[] {
         const out = [...this.outbox]; this.outbox = []; return out;
     }
 
     /**
-     * Il client non si dichiara mai finito: il framework smonterebbe
-     * il canvas e il pannello risultato non sarebbe visibile.
-     * È il SERVER che gestisce la fine con isFinished() → true.
+     * isFinished: il client torna "finito" solo dopo aver mostrato il risultato.
+     * Questo permette alla Lobby di chiudere il gioco e riportare il giocatore
+     * alla schermata principale, senza troncare il feedback del vincitore.
      */
-    isFinished(): boolean { return false; }
+    isFinished(): boolean {
+        if (this.phase !== 'finished' || this.finishedAt === null) return false;
+        return (this.clock - this.finishedAt) * 1000 >= RESULT_EXIT_MS;
+    }
 
-    // ── Lettura input e invio al server ───────────────────────────
+    // ── Lettura input e invio messaggi al server ─────────────────────────────
 
+    /** readInput: costruisce i messaggi input (selezione o gameplay). */
     private readInput(): void {
         const ui = this.userInput;
         const k  = this.keys;
 
-        // Combina W/A/S/D con frecce — entrambi funzionano
         const moveX   = ui.moveDirectionX !== 0 ? ui.moveDirectionX
                       : k['ArrowLeft']  ? -1
-                      : k['ArrowRight'] ?  1 : 0;
-
-        // W o freccia su = salto
+                      : k['ArrowRight'] ?  1
+                      : 0;
         const jump     = ui.moveDirectionY < 0 || k['ArrowUp'] === true;
-        // S o freccia giù o Enter = conferma selezione
         const moveDown = ui.moveDirectionY > 0 || k['ArrowDown'] === true;
         const confirm  = moveDown || k['Enter'] === true;
 
-        // ── Selezione personaggio ─────────────────────────────────
         if (this.phase === 'selection' && !this.confirmed) {
-            // Cambio personaggio sul fronte del tasto
+            // Edge detection per evitare scroll continuo.
             if (moveX !== this.prevSelX) {
                 if (moveX > 0) {
                     this.charIdx = (this.charIdx + 1) % CHARS.length;
@@ -771,7 +914,7 @@ export class HeadBallClient extends GameClient {
                 }
                 this.prevSelX = moveX;
             }
-            // Conferma sul fronte (evita invii multipli se tasto tenuto)
+
             if (confirm && !this.prevConfirm) {
                 this.confirmed = true;
                 this.outbox.push({ kind: 'selection:confirm', characterId: CHARS[this.charIdx].id });
@@ -780,35 +923,31 @@ export class HeadBallClient extends GameClient {
             return;
         }
 
-        // ── Gioco ─────────────────────────────────────────────────
         if (this.phase === 'playing') {
             const cur = {
                 moveX,
                 jump,
                 teleport: k['KeyF'] === true,
             };
-            // Invia solo se qualcosa è cambiato rispetto al tick precedente
-            const changed = (Object.keys(cur) as (keyof typeof cur)[])
-                .some(key => cur[key] !== this.prev[key]);
-            if (changed) {
-                this.outbox.push({ kind: 'input', ...cur });
-                this.prev = { ...cur };
-            }
+            // Invio per frame: evita di perdere input brevi.
+            this.outbox.push({ kind: 'input', ...cur });
+            this.prev = { ...cur };
         }
     }
 
     // ═══════════════════════════════════════════════════════════════
     //  GRAFICA
+    //  Tutte le funzioni qui sotto disegnano le varie parti del gioco.
     //  Tutte le misure sono proporzionali a CW/CH o a p.w/p.h
     //  → il gioco si vede bene a qualsiasi risoluzione.
     // ═══════════════════════════════════════════════════════════════
 
+    /** drawBackground: cielo, prato e nuvole animate. */
     private drawBackground(ctx: CanvasRenderingContext2D): void {
         ctx.fillStyle = '#68c8ff'; ctx.fillRect(0, 0, CW, GY);
         ctx.fillStyle = '#239c3d'; ctx.fillRect(0, GY, CW, CH - GY);
         ctx.fillStyle = '#126d2b'; ctx.fillRect(0, GY, CW, 7);
 
-        // Nuvole animate: si spostano lentamente verso destra
         ctx.save();
         const clouds = [
             { x: 140, y: 60,  s: 1.00, sp: 0.22 },
@@ -817,24 +956,30 @@ export class HeadBallClient extends GameClient {
         ];
         clouds.forEach(c => {
             const x = ((c.x + this.clock * c.sp * 18) % (CW + 100)) - 50;
-            ctx.globalAlpha = 0.30; ctx.fillStyle = '#fff';
+            ctx.globalAlpha = 0.30;
+            ctx.fillStyle = '#fff';
             ctx.beginPath(); ctx.ellipse(x,          c.y,        46*c.s, 18*c.s, 0, 0, Math.PI*2); ctx.fill();
             ctx.beginPath(); ctx.ellipse(x+28*c.s,   c.y-8*c.s,  32*c.s, 14*c.s, 0, 0, Math.PI*2); ctx.fill();
         });
         ctx.restore();
     }
 
+    /** drawPitch: linea centrale tratteggiata e due porte. */
     private drawPitch(ctx: CanvasRenderingContext2D): void {
         ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+        ctx.setLineDash([10, 8]);
         ctx.beginPath(); ctx.moveTo(CW/2, GTY); ctx.lineTo(CW/2, GY); ctx.stroke();
-        ctx.setLineDash([]); ctx.restore();
+        ctx.setLineDash([]);
+        ctx.restore();
         this.drawGoal(ctx, 0,       true);
         this.drawGoal(ctx, CW - GW, false);
     }
 
+    /** drawGoal: porta con rete + pali. */
     private drawGoal(ctx: CanvasRenderingContext2D, gx: number, isLeft: boolean): void {
-        const goalH = GY - GTY, T = GPT;
+        const goalH  = GY - GTY;
+        const T      = GPT;
         const frontX = isLeft ? gx + GW - T : gx;
         const backX  = isLeft ? gx          : gx + GW - T;
         const netX   = isLeft ? backX + T   : frontX + T;
@@ -851,15 +996,12 @@ export class HeadBallClient extends GameClient {
         ctx.fillStyle = '#c0ccd8'; ctx.fillRect(frontX, GTY, T, goalH);
         ctx.globalAlpha = 0.55; ctx.fillStyle = '#7f8b96'; ctx.fillRect(backX, GTY+T, T, goalH-T);
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#c0ccd8'; ctx.fillRect(gx, GTY, GW, T); // traversa
+        ctx.fillStyle = '#c0ccd8'; ctx.fillRect(gx, GTY, GW, T);
     }
 
     /**
-     * Disegna un personaggio con design compatto: testa + busto + piedi.
-     * Effetti visivi:
-     *   - frozenMs > 0  → overlay ghiaccio azzurro + cristalli
-     *   - bigHeadMs > 0 → testa ingrandita di BH_HEAD_MULT
-     *   - Occhi e piedi seguono dinamicamente la direzione p.dir
+     * drawPlayer: corpo/testa/occhi + overlay ghiaccio + label P1/P2.
+     * headR usa BH_HEAD_MULT per allineare visuale e hitbox.
      */
     private drawPlayer(ctx: CanvasRenderingContext2D, p: any): void {
         if (!p) return;
@@ -868,35 +1010,30 @@ export class HeadBallClient extends GameClient {
         const isFrozen  = p.frozenMs  > 0;
         const isBigHead = p.bigHeadMs > 0;
 
-        // Raggio testa: proporzionale a p.w, moltiplicato se Big Head
         const baseHeadR = p.w * 0.48;
         const headR     = baseHeadR * (isBigHead ? BH_HEAD_MULT : 1);
-        // Centro testa un po' in basso per un look più compatto
         const headCY    = p.y + p.h * 0.35;
 
-        // Centro busto (ellisse che collega testa e piedi)
         const bodyY  = p.y + p.h * 0.70;
         const bodyRX = p.w * 0.26;
         const bodyRY = p.h * 0.18;
 
         ctx.save();
 
-        // Ombra a terra (ellisse schiacciata)
         ctx.globalAlpha = 0.20; ctx.fillStyle = '#000';
         ctx.beginPath(); ctx.ellipse(cx, GY-2, p.w*0.40, 6, 0, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
 
-        // Busto / corpo
         ctx.fillStyle = char.jersey;
         ctx.beginPath(); ctx.ellipse(cx, bodyY, bodyRX, bodyRY, 0, 0, Math.PI*2); ctx.fill();
 
-        // Piedi: il piede nella direzione del movimento avanza leggermente
         const fR     = p.w * 0.15;
         const fCY    = p.y + p.h * 0.90;
         const spread = p.w * 0.22;
         const d      = p.dir ?? 1;
+
         [-1, 1].forEach(side => {
-            const advance = side === d ? 4 : -1; // piede avanzato nella direzione di marcia
+            const advance = side === d ? 4 : -1;
             const fx = cx + side * spread + advance;
             ctx.fillStyle = '#1a1a2e';
             ctx.beginPath(); ctx.ellipse(fx, fCY, fR, fR*0.65, 0, 0, Math.PI*2); ctx.fill();
@@ -904,7 +1041,6 @@ export class HeadBallClient extends GameClient {
             ctx.beginPath(); ctx.ellipse(fx, fCY-fR*0.18, fR*0.85, fR*0.30, 0, 0, Math.PI*2); ctx.fill();
         });
 
-        // Testa con gradiente radiale (effetto 3D, luce in alto a sinistra)
         const skinG = ctx.createRadialGradient(
             cx - headR*0.3, headCY - headR*0.3, headR*0.05,
             cx, headCY, headR
@@ -916,27 +1052,28 @@ export class HeadBallClient extends GameClient {
         ctx.fillStyle = skinG; ctx.fill();
         ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1.5; ctx.stroke();
 
-        // Fascia / capelli con il colore della maglia
         ctx.fillStyle = char.jersey;
         ctx.beginPath(); ctx.ellipse(cx, headCY-headR*0.72, headR*0.85, headR*0.30, 0, 0, Math.PI*2); ctx.fill();
 
-        // Occhi — le pupille seguono p.dir → sguardo dinamico
-        const eyeOX = headR*0.32, eyeY = headCY - headR*0.05;
-        const eyeRX = headR*0.20, eyeRY = headR*0.24;
+        const eyeOffsetX = headR*0.32;
+        const eyeY       = headCY - headR*0.05;
+        const eyeRX      = headR*0.20;
+        const eyeRY      = headR*0.24;
+
         ctx.fillStyle = '#fff';
-        [cx-eyeOX, cx+eyeOX].forEach(ex => {
+        [cx-eyeOffsetX, cx+eyeOffsetX].forEach(ex => {
             ctx.beginPath(); ctx.ellipse(ex, eyeY, eyeRX, eyeRY, 0, 0, Math.PI*2); ctx.fill();
         });
         ctx.fillStyle = '#1a0800';
-        [cx-eyeOX, cx+eyeOX].forEach(ex => {
+        [cx-eyeOffsetX, cx+eyeOffsetX].forEach(ex => {
             ctx.beginPath(); ctx.arc(ex + d*eyeRX*0.35, eyeY+eyeRY*0.10, eyeRX*0.55, 0, Math.PI*2); ctx.fill();
         });
-        ctx.fillStyle = 'rgba(255,255,255,0.75)'; // riflesso
-        [cx-eyeOX, cx+eyeOX].forEach(ex => {
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        [cx-eyeOffsetX, cx+eyeOffsetX].forEach(ex => {
             ctx.beginPath(); ctx.arc(ex + d*eyeRX*0.35 - eyeRX*0.2, eyeY-eyeRY*0.25, eyeRX*0.20, 0, Math.PI*2); ctx.fill();
         });
 
-        // Effetto CONGELATO: overlay azzurro + cristalli di ghiaccio
+        // Overlay ghiaccio quando frozen.
         if (isFrozen) {
             ctx.globalAlpha = 0.42; ctx.fillStyle = '#a0e8ff';
             ctx.beginPath(); ctx.arc(cx, headCY, headR, 0, Math.PI*2); ctx.fill();
@@ -949,55 +1086,52 @@ export class HeadBallClient extends GameClient {
             });
         }
 
-        // Label P1 / P2
         ctx.fillStyle = p.seat === 0 ? '#4ac7ff' : '#ff7272';
         ctx.font = `bold ${Math.round(headR*0.42)}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(p.seat === 0 ? 'P1' : 'P2', cx, headCY - headR*1.42);
 
-        // Barra cooldown Teleport sopra il giocatore
         this.drawTeleportBar(ctx, p);
 
         ctx.restore();
     }
 
-    /**
-     * Barra UI del cooldown Teleport sopra ogni giocatore.
-     * Oro = ricarico in corso | Verde = pronto.
-     */
+    /** drawTeleportBar: barra cooldown sopra il giocatore. */
     private drawTeleportBar(ctx: CanvasRenderingContext2D, p: any): void {
         const barW = p.w;
         const barH = 5;
         const bx   = p.x;
         const by   = p.y - 14;
-        const pct  = p.tpCdMs > 0 ? 1 - p.tpCdMs / TP_CD_MS : 1; // 0 = scarico, 1 = pronto
+        const pct  = p.tpCdMs > 0 ? 1 - p.tpCdMs / TP_CD_MS : 1;
 
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.fillRect(bx, by, barW, barH);
         ctx.fillStyle = pct < 1 ? '#ffc66e' : '#68d68d';
         ctx.fillRect(bx, by, barW * pct, barH);
 
-        // Etichetta "TP" a sinistra della barra
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
         ctx.font = `bold ${Math.round(barH * 1.8)}px sans-serif`;
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillText('TP', bx, by + barH / 2);
     }
 
+    /** drawBall: ombra + gradiente sferico + pentagono centrale. */
     private drawBall(ctx: CanvasRenderingContext2D, b: any): void {
         const { x, y } = b;
         ctx.save();
+
         ctx.globalAlpha = 0.18; ctx.fillStyle = '#000';
         ctx.beginPath(); ctx.ellipse(x, GY-3, BR*0.9, BR*0.28, 0, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
 
         const g = ctx.createRadialGradient(x-BR*0.35, y-BR*0.35, BR*0.05, x, y, BR);
-        g.addColorStop(0,'#fff'); g.addColorStop(0.4,'#f0f0f0'); g.addColorStop(1,'#8888a0');
+        g.addColorStop(0,'#fff');
+        g.addColorStop(0.4,'#f0f0f0');
+        g.addColorStop(1,'#8888a0');
         ctx.beginPath(); ctx.arc(x, y, BR, 0, Math.PI*2);
         ctx.fillStyle = g; ctx.fill();
         ctx.strokeStyle = '#666'; ctx.lineWidth = 1.5; ctx.stroke();
 
-        // Pentagono del pallone
         ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
         const verts = [[0,-1],[0.951,-0.309],[0.588,0.809],[-0.588,0.809],[-0.951,-0.309]];
         ctx.beginPath();
@@ -1010,29 +1144,25 @@ export class HeadBallClient extends GameClient {
     }
 
     /**
-     * Disegna la bolla superpotere sul campo con effetto pulsante.
-     * Il clock produce un'animazione sinusoidale di scala.
-     * Colori: azzurro per ICE, verde per BIG HEAD.
+     * drawBubble: bolla con pulsazione leggera per attirare l'attenzione.
      */
     private drawBubble(ctx: CanvasRenderingContext2D, bub: any): void {
-        const pulse = 1 + 0.12 * Math.sin(this.clock * 4); // oscillazione ~±12%
+        const pulse = 1 + 0.12 * Math.sin(this.clock * 4);
         const r     = BUBBLE_RADIUS * pulse;
         const color = bub.type === 'ice' ? '#7df0ff' : '#a0ff80';
         const icon  = bub.type === 'ice' ? '❄'       : '💪';
 
         ctx.save();
-        // Alone esterno semitrasparente
+
         ctx.globalAlpha = 0.25;
         ctx.fillStyle   = color;
         ctx.beginPath(); ctx.arc(bub.x, bub.y, r * 1.5, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
 
-        // Cerchio principale
         ctx.fillStyle = color;
         ctx.beginPath(); ctx.arc(bub.x, bub.y, r, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
 
-        // Icona centrata
         ctx.fillStyle    = '#07111c';
         ctx.font         = `${Math.round(r * 1.1)}px sans-serif`;
         ctx.textAlign    = 'center';
@@ -1041,10 +1171,11 @@ export class HeadBallClient extends GameClient {
         ctx.restore();
     }
 
+    /** drawHUD: punteggio, timer e barra spawn bolla. */
     private drawHUD(ctx: CanvasRenderingContext2D): void {
-        const tot  = Math.ceil(Math.max(0, this.timeMs) / 1000);
-        const mm   = String(Math.floor(tot/60)).padStart(2,'0');
-        const ss   = String(tot%60).padStart(2,'0');
+        const secondiTotali = Math.ceil(Math.max(0, this.timeMs) / 1000);
+        const mm   = String(Math.floor(secondiTotali/60)).padStart(2,'0');
+        const ss   = String(secondiTotali%60).padStart(2,'0');
         const time = this.phase === 'countdown'
             ? String(Math.max(0, Math.ceil(this.timeMs / 1000)))
             : `${mm}:${ss}`;
@@ -1052,21 +1183,23 @@ export class HeadBallClient extends GameClient {
         ctx.save();
         ctx.font = `bold ${Math.round(CW*0.028)}px sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.fillText(String(this.score.left),  CW*0.16+1, 13);
         ctx.fillText(time,                     CW/2+1,    13);
         ctx.fillText(String(this.score.right), CW*0.84+1, 13);
+
         ctx.fillStyle = '#4ac7ff'; ctx.fillText(String(this.score.left),  CW*0.16, 12);
         ctx.fillStyle = '#ffffff'; ctx.fillText(time,                     CW/2,    12);
         ctx.fillStyle = '#ff7272'; ctx.fillText(String(this.score.right), CW*0.84, 12);
 
-        // Indicatore spawn bolla prossima (se nessuna bolla in campo)
         if (!this.bubble && this.phase === 'playing') {
             const pct = 1 - this.bubbleSpawnMs / BUBBLE_SPAWN_MS;
             const bw  = 140, bh = 6;
             const bx  = CW/2 - bw/2, by = 44;
+
             ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(bx, by, bw, bh);
-            ctx.fillStyle = '#ffd700';          ctx.fillRect(bx, by, bw*pct, bh);
+            ctx.fillStyle = '#ffd700'; ctx.fillRect(bx, by, bw*pct, bh);
             ctx.fillStyle = 'rgba(255,255,255,0.5)';
             ctx.font = `${Math.round(CH*0.022)}px sans-serif`;
             ctx.fillText('⚡ prossima bolla', CW/2, by + 14);
@@ -1074,6 +1207,7 @@ export class HeadBallClient extends GameClient {
         ctx.restore();
     }
 
+    /** drawCountdown: overlay con numero centrale. */
     private drawCountdown(ctx: CanvasRenderingContext2D): void {
         ctx.save();
         ctx.fillStyle = 'rgba(7,12,20,0.55)'; ctx.fillRect(0, 0, CW, CH);
@@ -1087,6 +1221,7 @@ export class HeadBallClient extends GameClient {
         ctx.restore();
     }
 
+    /** drawSelection: pannello selezione personaggio e stato avversario. */
     private drawSelection(ctx: CanvasRenderingContext2D): void {
         const pw = CW*0.44, ph = CH*0.70;
         const px = (CW-pw)/2, py = (CH-ph)/2;
@@ -1096,8 +1231,10 @@ export class HeadBallClient extends GameClient {
 
         const char = CHARS[this.charIdx];
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+
         ctx.fillStyle = 'rgba(238,245,255,0.55)'; ctx.font = `${Math.round(CH*0.022)}px sans-serif`;
-        ctx.fillText('HEAD BALL', CW/2, py+18);
+        ctx.fillText('HEAD BALL ONLINE', CW/2, py+18);
+
         ctx.fillStyle = '#eef5ff'; ctx.font = `bold ${Math.round(CH*0.042)}px sans-serif`;
         ctx.fillText(
             this.confirmed           ? 'Pronto! In attesa avversario...' :
@@ -1117,7 +1254,8 @@ export class HeadBallClient extends GameClient {
         if (!this.confirmed && this.phase === 'selection') {
             ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font=`${Math.round(CH*0.048)}px sans-serif`;
             ctx.textBaseline='middle';
-            ctx.fillText('◀', orbX-orbR*1.8, orbY); ctx.fillText('▶', orbX+orbR*1.8, orbY);
+            ctx.fillText('◀', orbX-orbR*1.8, orbY);
+            ctx.fillText('▶', orbX+orbR*1.8, orbY);
             ctx.textBaseline='top';
             ctx.fillStyle='rgba(238,245,255,0.6)'; ctx.font=`${Math.round(CH*0.026)}px sans-serif`;
             ctx.fillText('A / ←  ·  D / →   cambia', CW/2, py+ph*0.75);
@@ -1137,26 +1275,30 @@ export class HeadBallClient extends GameClient {
         ctx.restore();
     }
 
+    /** drawResult: pannello finale con esito e punteggio. */
     private drawResult(ctx: CanvasRenderingContext2D): void {
         const pw = CW*0.44, ph = CH*0.38, px=(CW-pw)/2, py=(CH-ph)/2;
         ctx.save();
         ctx.fillStyle='rgba(9,18,32,0.95)'; this.rr(ctx,px,py,pw,ph,28); ctx.fill();
         ctx.textAlign='center'; ctx.textBaseline='middle';
+
         ctx.fillStyle='#eef5ff'; ctx.font=`bold ${Math.round(CH*0.064)}px sans-serif`;
         ctx.fillText(
-            this.winner==='draw' ? 'Pareggio!' : this.winner==='left' ? 'Vince P1  🎉' : 'Vince P2  🎉',
+            this.winner==='draw'  ? 'Pareggio!'     :
+            this.winner==='left'  ? 'Vince P1  🎉'  :
+                                    'Vince P2  🎉',
             CW/2, py+ph*0.32
         );
+
         ctx.fillStyle='rgba(238,245,255,0.60)'; ctx.font=`${Math.round(CH*0.034)}px sans-serif`;
         ctx.fillText(`${this.score.left} - ${this.score.right}`, CW/2, py+ph*0.58);
-        ctx.fillText('Attendi la prossima partita...', CW/2, py+ph*0.80);
+        ctx.fillText('Ritorno alla lobby principale...', CW/2, py+ph*0.80);
         ctx.restore();
     }
 
     /**
-     * Pannello manuale di gioco — appare all'avvio, sopra tutto.
-     * Il giocatore non può inviare input finché non clicca "Gioca!".
-     * Le coordinate del pulsante combaciano con registerManualClick().
+     * drawManual: pannello istruzioni. Le coordinate del pulsante devono
+     * combaciare con registerManualClick() per il click.
      */
     private drawManual(ctx: CanvasRenderingContext2D): void {
         ctx.save();
@@ -1169,32 +1311,38 @@ export class HeadBallClient extends GameClient {
 
         const cx = CW/2;
         ctx.textAlign='center'; ctx.textBaseline='top';
+
         ctx.fillStyle='#eef5ff'; ctx.font=`800 ${Math.round(CH*0.058)}px sans-serif`;
-        ctx.fillText('⚽ HEAD BALL', cx, py+20);
+        ctx.fillText('⚽ HEAD BALL ONLINE', cx, py+20);
         ctx.fillStyle='rgba(238,245,255,0.55)'; ctx.font=`${Math.round(CH*0.026)}px sans-serif`;
         ctx.fillText('Manuale di gioco', cx, py+72);
 
-        // Righe controlli
-        const lineH = CH*0.068;
-        const col1  = px + pw*0.08;
-        const col2  = px + pw*0.22;
-        let rowY = py + 108;
+        // ── Tabella controlli ────────────────────────────────────────
+        const lineH = CH*0.068;   // altezza di ogni riga
+        const col1  = px + pw*0.08;   // colonna icona
+        const col2  = px + pw*0.22;   // colonna tasto
+        let rowY = py + 108;          // Y di partenza per la prima riga
 
+        // Array delle righe da disegnare
         const rows = [
             { icon: '←→', label: 'A / ←  D / →',  desc: 'Muovi il personaggio'                        },
             { icon: '↑',  label: 'W / ↑',           desc: 'Salta  (di nuovo in aria = doppio salto)'    },
-            { icon: '⚡', label: 'F',                desc: `Teleport — scatta avanti  (cooldown ${TP_CD_MS/1000}s)` },
+            { icon: '⚡', label: 'F',                desc: `Teleport — davanti alla palla  (cooldown ${TP_CD_MS/1000}s)` },
         ];
+
         rows.forEach(row => {
             ctx.textAlign='left'; ctx.textBaseline='middle';
+            // Sfondo riga (rettangolo arrotondato semitrasparente)
             ctx.fillStyle='rgba(255,255,255,0.12)'; this.rr(ctx, px+pw*0.04, rowY-lineH*0.42, pw*0.92, lineH*0.84, 10); ctx.fill();
+            // Icona (gialla)
             ctx.fillStyle='#ffd966'; ctx.font=`bold ${Math.round(CH*0.038)}px sans-serif`; ctx.fillText(row.icon, col1+16, rowY);
+            // Tasto (azzurro)
             ctx.fillStyle='#4ac7ff'; ctx.font=`bold ${Math.round(CH*0.028)}px sans-serif`; ctx.fillText(row.label, col2, rowY);
+            // Descrizione (bianco)
             ctx.fillStyle='#eef5ff'; ctx.font=`${Math.round(CH*0.026)}px sans-serif`;      ctx.fillText(row.desc, col2+pw*0.28, rowY);
-            rowY += lineH;
+            rowY += lineH;  // andiamo alla riga successiva
         });
 
-        // Sezione bolle
         rowY += lineH*0.3;
         ctx.textAlign='center'; ctx.textBaseline='top';
         ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font=`${Math.round(CH*0.024)}px sans-serif`;
@@ -1218,10 +1366,11 @@ export class HeadBallClient extends GameClient {
         ctx.fillStyle='rgba(238,245,255,0.40)'; ctx.font=`${Math.round(CH*0.022)}px sans-serif`;
         ctx.fillText(`Le bolle appaiono ogni ${BUBBLE_SPAWN_MS/1000}s — cammina sopra per raccoglierle!`, cx, rowY);
 
-        // Pulsante Gioca! — coordinate identiche a registerManualClick()
+        // ATTENZIONE: le coordinate devono combaciare ESATTAMENTE con quelle di registerManualClick()
         const bw=180, bh=48, bx2=cx-bw/2, by2=CH*0.78;
         const btnG = ctx.createLinearGradient(bx2, by2, bx2, by2+bh);
-        btnG.addColorStop(0,'#68d68d'); btnG.addColorStop(1,'#2f9360');
+        btnG.addColorStop(0,'#68d68d');
+        btnG.addColorStop(1,'#2f9360');
         ctx.fillStyle=btnG; this.rr(ctx,bx2,by2,bw,bh,14); ctx.fill();
         ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1; this.rr(ctx,bx2,by2,bw,bh,14); ctx.stroke();
         ctx.fillStyle='#07111c'; ctx.font=`800 ${Math.round(bh*0.50)}px sans-serif`;
@@ -1231,15 +1380,311 @@ export class HeadBallClient extends GameClient {
         ctx.restore();
     }
 
-    // ── Utility ───────────────────────────────────────────────────
+    // ── Utility ───────────────────────────────────────────────────────────────
 
-    /** Percorso rettangolo con angoli arrotondati (path only, no fill/stroke). */
+    /** rr: path di rounded-rect (compatibile con browser senza roundRect). */
     private rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
         ctx.beginPath();
-        ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y); ctx.arcTo(x+w, y,     x+w, y+r,     r);
-        ctx.lineTo(x+w, y+h-r);                    ctx.arcTo(x+w, y+h,   x+w-r, y+h,   r);
-        ctx.lineTo(x+r, y+h);                      ctx.arcTo(x,   y+h,   x,     y+h-r, r);
-        ctx.lineTo(x,   y+r);                      ctx.arcTo(x,   y,     x+r,   y,     r);
+        ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+        ctx.arcTo(x+w, y, x+w, y+r, r);
+        ctx.lineTo(x+w, y+h-r);
+        ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+        ctx.lineTo(x+r, y+h);
+        ctx.arcTo(x, y+h, x, y+h-r, r);
+        ctx.lineTo(x, y+r);
+        ctx.arcTo(x, y, x+r, y, r);
         ctx.closePath();
+    }
+
+    // ── Animazione Goal ───────────────────────────────────────────────────────
+
+    /**
+     * onGoalScored: orchestratore dell'animazione goal.
+     * Avvia: zoom/shake, testo GOAL!, particelle, audio.
+     * L'animazione si auto-termina dopo 2s (sincronizzato con GOAL_PAUSE_MS dal server).
+     */
+    private onGoalScored(scorer: Seat): void {
+        this.goalScoredAt = this.clock;
+        this.goalScorer = scorer;
+        this.isGoalAnimating = true;
+
+        // Reset effetti precedenti
+        this.particles = [];
+        this.goalSlowmoUntil = this.clock + SLOWMO_DURATION / 1000;
+        this.goalShakeDecay = SLOWMO_DURATION / 1000;
+
+        // Crea particelle confetti
+        this.spawnGoalParticles();
+
+        // Riproduci suono
+        this.playGoalAudio();
+    }
+
+    /**
+     * spawnGoalParticles: genera confetti intorno alla porta.
+     */
+    private spawnGoalParticles(): void {
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const angle = (Math.random() * Math.PI * 2);
+            const speed = 200 + Math.random() * 300;
+            const x = this.goalScorer === 0 ? CW - GW / 2 : GW / 2;
+            const y = GY - 100;
+
+            this.particles.push({
+                x,
+                y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 200,
+                lifetime: PARTICLE_LIFETIME / 1000,
+                maxLifetime: PARTICLE_LIFETIME / 1000,
+                rotation: Math.random() * Math.PI * 2,
+                rotVel: (Math.random() - 0.5) * 8,
+            });
+        }
+    }
+
+    /**
+     * updateGoalParticles: aggiorna fisica particelle (gravità, lifetime).
+     */
+    private updateGoalParticles(dt: number): void {
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
+            p.vy += B_GRAV * dt;
+            p.x  += p.vx * dt;
+            p.y  += p.vy * dt;
+            p.lifetime = Math.max(0, p.lifetime - dt);
+            p.rotation += p.rotVel * dt;
+
+            if (p.lifetime <= 0) {
+                this.particles.splice(i, 1);
+            }
+        }
+    }
+
+    /**
+     * updateGoalShake: decrementa la durata dello shake.
+     */
+    private updateGoalShake(): void {
+        if (this.goalShakeDecay > 0) {
+            this.goalShakeDecay = Math.max(0, this.goalShakeDecay - (1 / 60)); // ~60fps
+        }
+    }
+
+    /**
+     * computeGoalCameraEffects: calcola zoom e shake per effetti camera.
+     * Ritorna scale e offset di shake.
+     */
+    private computeGoalCameraEffects(): { zoomScale: number; shakeX: number; shakeY: number } {
+        if (this.goalScoredAt === null) {
+            return { zoomScale: 1, shakeX: 0, shakeY: 0 };
+        }
+
+        const elapsed = (this.clock - this.goalScoredAt) * 1000;
+        let zoomScale = 1;
+        let shakeX = 0;
+        let shakeY = 0;
+
+        // Zoom: 0-1s animate 1 → 1.3 → 1
+        if (elapsed < 1000) {
+            const t = elapsed / 1000;
+            if (t < 0.5) {
+                zoomScale = 1 + (CAMERA_ZOOM_SCALE - 1) * (t / 0.5);
+            } else {
+                zoomScale = CAMERA_ZOOM_SCALE - (CAMERA_ZOOM_SCALE - 1) * ((t - 0.5) / 0.5);
+            }
+        }
+
+        // Shake: decay 0-0.8s random offset
+        if (this.goalShakeDecay > 0) {
+            const intensity = CAMERA_SHAKE_INTENS * (this.goalShakeDecay / (SLOWMO_DURATION / 1000));
+            shakeX = (Math.random() - 0.5) * intensity * 2;
+            shakeY = (Math.random() - 0.5) * intensity * 2;
+        }
+
+        return { zoomScale, shakeX, shakeY };
+    }
+
+    /**
+     * drawGoalText: disegna "GOAL!" con fade-in e scale pop.
+     * Auto-termina dopo GOAL_PAUSE_MS (2s) per sincronizzarsi con il cooldown del server.
+     */
+    private drawGoalText(ctx: CanvasRenderingContext2D): void {
+        if (this.goalScoredAt === null) return;
+
+        const elapsed = (this.clock - this.goalScoredAt) * 1000;
+        
+        // Termina l'animazione dopo il cooldown goal (2s)
+        if (elapsed > GOAL_PAUSE_MS) {
+            this.isGoalAnimating = false;
+            this.goalScoredAt = null;
+            return;
+        }
+
+        if (elapsed > GOAL_TEXT_DURATION) return;
+
+        // Fade-in: 0-0.3s (da 0 → 1)
+        // Scale pop: 0-0.4s (da 0.5 → 1.2), poi 0.4-2s (da 1.2 → 1.0)
+        let alpha = Math.min(1, elapsed / 300);
+        let scale = 1;
+
+        if (elapsed < 400) {
+            const t = elapsed / 400;
+            scale = 0.5 + t * (1.2 - 0.5);
+        } else {
+            const t = (elapsed - 400) / (GOAL_TEXT_DURATION - 400);
+            scale = 1.2 - t * 0.2;
+        }
+
+        alpha = Math.max(0, 1 - Math.max(0, elapsed - 1500) / 500);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(CW / 2, CH / 2.5);
+        ctx.scale(scale, scale);
+        ctx.font = `800 ${Math.round(CH * 0.15)}px sans-serif`;
+        ctx.fillStyle = '#ffff00';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(255, 100, 0, 0.8)';
+        ctx.shadowBlur = 20;
+        ctx.fillText('⚽ GOAL! ⚽', 0, 0);
+        ctx.restore();
+    }
+
+    /**
+     * drawGoalParticles: disegna le particelle confetti.
+     */
+    private drawGoalParticles(ctx: CanvasRenderingContext2D): void {
+        this.particles.forEach(p => {
+            const alpha = p.lifetime / p.maxLifetime;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation);
+            ctx.fillStyle = ['#ff6b6b', '#ffd93d', '#6bcf7f', '#4d96ff'][Math.floor(Math.random() * 4)];
+            ctx.fillRect(-5, -5, 10, 10);
+            ctx.restore();
+        });
+    }
+
+    /**
+     * drawGoalMenu: disegna overlay menu con pulsante "Gioca!" time-gated.
+     */
+    private drawGoalMenu(ctx: CanvasRenderingContext2D): void {
+        if (this.goalScoredAt === null) return;
+
+        const elapsed = (this.clock - this.goalScoredAt) * 1000;
+
+        // Sfondo semi-trasparente
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(0, 0, CW, CH);
+
+        // Box menu
+        const mw = CW * 0.5;
+        const mh = CH * 0.35;
+        const mx = (CW - mw) / 2;
+        const my = (CH - mh) / 2;
+
+        ctx.fillStyle = 'rgba(20, 30, 50, 0.9)';
+        this.rr(ctx, mx, my, mw, mh, 15);
+        ctx.fill();
+        ctx.strokeStyle = '#4d96ff';
+        ctx.lineWidth = 2;
+        this.rr(ctx, mx, my, mw, mh, 15);
+        ctx.stroke();
+
+        // Pulsante "Continua"
+        const bw = mw * 0.6;
+        const bh = mh * 0.35;
+        const bx = (CW - bw) / 2;
+        const by = (CH - bh) / 2;
+
+        const isButtonActive = elapsed >= MENU_BUTTON_DELAY;
+        const btnColor = isButtonActive ? '#68d68d' : '#555555';
+        const btnGrad = ctx.createLinearGradient(bx, by, bx, by + bh);
+        btnGrad.addColorStop(0, isButtonActive ? '#7fd999' : '#666666');
+        btnGrad.addColorStop(1, btnColor);
+
+        ctx.fillStyle = btnGrad;
+        this.rr(ctx, bx, by, bw, bh, 10);
+        ctx.fill();
+        ctx.strokeStyle = isButtonActive ? 'rgba(100, 255, 100, 0.5)' : 'rgba(100, 100, 100, 0.3)';
+        ctx.lineWidth = 2;
+        this.rr(ctx, bx, by, bw, bh, 10);
+        ctx.stroke();
+
+        ctx.font = `700 ${Math.round(bh * 0.5)}px sans-serif`;
+        ctx.fillStyle = isButtonActive ? '#07111c' : '#999999';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🎮 CONTINUA', CW / 2, by + bh / 2);
+
+        // Countdown badge
+        if (elapsed < MENU_BUTTON_DELAY) {
+            const remaining = Math.ceil((MENU_BUTTON_DELAY - elapsed) / 1000);
+            ctx.font = `600 ${Math.round(CH * 0.04)}px sans-serif`;
+            ctx.fillStyle = '#ffaa44';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`Aspetta ${remaining}s`, CW / 2, by - bh * 0.3);
+        }
+
+        // Termina animazione dopo che il button è stato attivo per un po' o se è passato troppo tempo
+        if (elapsed > MENU_BUTTON_DELAY + 1000) {
+            this.isGoalAnimating = false;
+            this.goalScoredAt = null;
+        }
+    }
+
+    /**
+     * playGoalAudio: riproduce suono di pubblico che esulta.
+     * Usa Web Audio API per generare un suono di celebrazione.
+     */
+    private playGoalAudio(): void {
+        try {
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            }
+
+            const ctx = this.audioContext;
+            if (ctx.state === 'suspended') ctx.resume();
+
+            const now = ctx.currentTime;
+            const duration = 0.5;
+
+            // Crea un breve burst di suono celebrativo con modulazione
+            const osc1 = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const gain1 = ctx.createGain();
+            const gain2 = ctx.createGain();
+
+            osc1.type = 'sine';
+            osc2.type = 'triangle';
+            osc1.frequency.setValueAtTime(400, now);
+            osc2.frequency.setValueAtTime(600, now);
+
+            gain1.gain.setValueAtTime(0.3, now);
+            gain1.gain.exponentialRampToValueAtTime(0.1, now + duration);
+            gain2.gain.setValueAtTime(0.2, now);
+            gain2.gain.exponentialRampToValueAtTime(0.05, now + duration);
+
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+            osc1.connect(gain1);
+            osc2.connect(gain2);
+            gain1.connect(gain);
+            gain2.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc1.start(now);
+            osc2.start(now);
+            osc1.stop(now + duration);
+            osc2.stop(now + duration);
+
+        } catch (e) {
+            // Audio fallback silenzioso se Web Audio non disponibile
+        }
     }
 }
