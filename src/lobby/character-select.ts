@@ -29,12 +29,10 @@ export class CharacterSelect {
         
         this.leftBtn = new Button('<', userInput, () => {
             this.selectedCharacterIndex = mod(this.selectedCharacterIndex + 1, this.characterNames.length);
-            console.log(this.characterNames[this.selectedCharacterIndex]);
         });
         
         this.rightBtn = new Button('>', userInput, () => {
             this.selectedCharacterIndex = mod(this.selectedCharacterIndex - 1, this.characterNames.length);
-            console.log(this.characterNames[this.selectedCharacterIndex]);
         });
         
         this.okBtn = new Button('ok', userInput, () => {
