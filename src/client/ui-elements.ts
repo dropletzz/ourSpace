@@ -107,6 +107,10 @@ export class Button extends ClickableRectangle {
     }
 
     draw(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+        this.drawWithLabel(ctx, this.text, x, y, w, h);
+    }
+
+    drawWithLabel(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, w: number, h: number) {
         this.updateRectangle(ctx, x, y, w, h);
 
         const defaultMain = this.enabled ? "#d18800" : "#555555";
@@ -135,7 +139,7 @@ export class Button extends ClickableRectangle {
         ctx.font = `bold ${Math.min(w, h) * 0.5}px Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(this.text, x + w / 2 + pushOffset, y + h / 2 + pushOffset);
+        ctx.fillText(label, x + w / 2 + pushOffset, y + h / 2 + pushOffset);
     }
 
     setColors(newColors: ButtonColors): void {

@@ -1,6 +1,7 @@
 import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, EPSILON } from '../common';
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';
+import { ExtendedGameProposal } from './game-select';
 import { Button } from '../client/ui-elements';
 import { GameServer } from '../games/game';
 import { GAMES } from '../games/index'
@@ -11,6 +12,13 @@ type Person = Player & {
     x: number;
     y: number;
 };
+
+type GameProposal = {
+    gameKey: string;
+    proposerId: string;
+    proposalId: string;
+    acceptedPlayerIds: string[];
+}
 
 // +messaggi
 type GameMsg = {
@@ -23,12 +31,7 @@ type ServerInitMsg = {
     kind: "init";
     yourId: string;
     people: Record<string, Person>;
-    gameProposal?: {
-        gameKey: string;
-        proposerId: string;
-        proposalId: string;
-        acceptedPlayerIds: string[];
-    }
+    gameProposals: Record<string, GameProposal>;
 };
 
 type ServerNameIsTakenMsg = {
@@ -45,29 +48,23 @@ type ServerExitMsg = {
     id: string;
 };
 
-type ServerGameProposalMsg = {
-    kind: "gameProposal";
-    gameKey: string;
-    proposerId: string;
-    proposalId: string;
-};
-
-type ServerGameProposalAcceptedMsg = {
-    kind: "gameProposalAccepted";
-    proposalId: string;
-    accepterId: string;
-};
-type ServerGameProposalRefusedMsg = {
-    kind: "gameProposalRefused";
+type ServerGameJoinRefusedMsg = {
+    kind: "gameJoinRefused";
     proposalId: string;
     reason: string;
 };
 
-type GameStartedMsg = {
+type ServerGameProposalsUpdateMsg = {
+    kind: "gameProposalsUpdate";
+    gameProposals: Record<string, GameProposal>;
+};
+
+type ServerGameStartedMsg = {
     kind: "gameStarted";
     gameId: string;
     gameKey: string;
     players: Record<string, Player>;
+    proposalId: string;
 };
 
 type LobbyServerMsg =
@@ -75,10 +72,9 @@ type LobbyServerMsg =
     | ServerNameIsTakenMsg
     | ServerUpdateMsg 
     | ServerExitMsg
-    | ServerGameProposalMsg
-    | ServerGameProposalAcceptedMsg
-    | ServerGameProposalRefusedMsg
-    | GameStartedMsg
+    | ServerGameJoinRefusedMsg
+    | ServerGameProposalsUpdateMsg
+    | ServerGameStartedMsg
     | GameMsg;
 
 type ClientInitMsg = {
@@ -103,6 +99,16 @@ type ClientGameProposalAcceptMsg = {
     proposalId: string;
 };
 
+type ClientGameProposalExitMsg = {
+    kind: "gameProposalExit";
+    proposalId: string;
+};
+
+type ClientGameProposalDeleteMsg = {
+    kind: "gameProposalDelete";
+    proposalId: string;
+};
+
 type ClientStartGameMsg = {
     kind: "startGame";
     proposalId: string;
@@ -114,6 +120,8 @@ type LobbyClientMsg =
     | ClientGameProposalMsg
     | ClientGameProposalAcceptMsg
     | ClientStartGameMsg
+    | ClientGameProposalExitMsg
+    | ClientGameProposalDeleteMsg
     | GameMsg;
 // -messaggi
 
@@ -133,21 +141,18 @@ const worldBounds = {
 export class LobbyServer {
     public people: Record<string, Person>;
     public outgoingMessages: OutgoingMsg[];
+
     public games: Record<string, GameServer> = {};
     public gamesNames: Record<string, string> = {};
     private gameIdCounter: number = 0;
     
-    private currentProposal: {
-        gameKey: string;
-        proposerId: string;
-        proposalId: string;
-        acceptedPlayerIds: Set<string>;
-    } | null = null;
+    private gameProposals: Record<string, GameProposal>;
     private proposalIdCounter: number = 0;
 
     constructor() {
         this.people = {};
         this.outgoingMessages = [];
+        this.gameProposals = {};
 
         setInterval(() => {
             console.log('\n=====GIOCHI ATTIVI==========================')
@@ -155,41 +160,55 @@ export class LobbyServer {
                 console.log(`${key} -> ${this.gamesNames[key]}`);
             })
             console.log('============================================')
+            console.log('\n=====PROPOSTE DI GIOCO======================')
+            console.log(this.gameProposals);
+            console.log('============================================')
         }, 2000);
     }
 
     clientConnected(id: string) {
+        const gameProposals: Record<string, any> = {};
+        Object.values(this.gameProposals).forEach(p => {
+            gameProposals[p.proposalId] = {
+                gameKey: p.gameKey,
+                proposalId: p.proposalId,
+                proposerId: p.proposerId,
+                acceptedPlayerIds: [...p.acceptedPlayerIds]
+            }
+        });
         const message = {
             clientId: id,
             payload: {
                 kind: 'init',
                 yourId: id,
-                people: this.people
+                people: this.people,
+                gameProposals: gameProposals
             } as ServerInitMsg
         };
-        if (this.currentProposal)
-            message.payload.gameProposal = {
-                gameKey: this.currentProposal.gameKey,
-                proposerId: this.currentProposal.proposerId,
-                proposalId: this.currentProposal.proposalId,
-                acceptedPlayerIds: [...this.currentProposal.acceptedPlayerIds]
-            }
         this.outgoingMessages.push(message)
     }
 
     clientClosed(id: string) {
+        Object.keys(this.gameProposals).forEach(proposalId => {
+            const proposal = this.gameProposals[proposalId];
+
+            // If this client was the proposer, cancel the proposal
+            if (proposal.proposerId === id) {
+                delete this.gameProposals[proposalId];
+
+                const payload: ServerGameProposalsUpdateMsg = {
+                    kind: 'gameProposalsUpdate',
+                    gameProposals: this.gameProposals
+                }
+                this.outgoingMessages.push({ payload });
+            }
+
+            // If this client accepted the current proposal, remove them from accepted players
+            const index = proposal.acceptedPlayerIds.indexOf(id);
+            if (index >= 0) proposal.acceptedPlayerIds.splice(index, 1);
+        });
+        
         delete this.people[id];
-        
-        // If this client was the proposer, cancel the proposal
-        if (this.currentProposal && this.currentProposal.proposerId === id) {
-            this.currentProposal = null;
-        }
-        
-        // If this client accepted the current proposal, remove them from accepted players
-        if (this.currentProposal) {
-            this.currentProposal.acceptedPlayerIds.delete(id);
-        }
-        
         this.outgoingMessages.push({
             payload: {
                 kind: 'exit',
@@ -199,8 +218,6 @@ export class LobbyServer {
     }
 
     tick(incomingMessages: IncomingMsg[], dt: number): OutgoingMsg[] {
-        const messages: OutgoingMsg[] = this.outgoingMessages;
-        this.outgoingMessages = [];
         const updatedPeople: Record<string, Person> = {};
 
         // Separate lobby messages from game messages and group game messages by gameId
@@ -264,7 +281,7 @@ export class LobbyServer {
                         for (const box of building.collisionBoxes) {
                             const side = getCollisionSide(playerRect, box);
                             if (side !== "none") {
-                                // Push out based on collision side
+                                // Push oplayerIdsut based on collision side
                                 if (side === "left") newX = box.x - PERSON_W / 2;
                                 else if (side === "right") newX = box.x + box.w + PERSON_W / 2;
                                 else if (side === "top") newY = box.y - PERSON_H / 2;
@@ -279,43 +296,70 @@ export class LobbyServer {
                 }
             }
             else if (payload.kind === "gameProposal") {
-                this.handleGameProposal(clientId, payload.gameKey);
+                this.newGameProposal(clientId, payload.gameKey);
             }
             else if (payload.kind === "gameProposalAccept") {
-                if (this.currentProposal && this.currentProposal.proposalId === payload.proposalId) {
-                    const { acceptedPlayerIds, gameKey } = this.currentProposal;
+                const currentProposal = this.gameProposals[payload.proposalId];
+                if (currentProposal) {
+                    const { acceptedPlayerIds, gameKey } = currentProposal;
                     const { maxPlayers } = GAMES[gameKey];
-                    const maxPlayersOk = !maxPlayers || acceptedPlayerIds.size < maxPlayers;
+                    const maxPlayersOk = !maxPlayers || acceptedPlayerIds.length < maxPlayers;
                     if (maxPlayersOk) {
-                        this.currentProposal.acceptedPlayerIds.add(clientId);
-                        messages.push({
-                            payload: {
-                                kind: 'gameProposalAccepted',
-                                proposalId: payload.proposalId,
-                                accepterId: clientId
-                            } as ServerGameProposalAcceptedMsg
-                        })
+                        const playerIds = currentProposal.acceptedPlayerIds;
+                        if (playerIds.indexOf(clientId) < 0) playerIds.push(clientId);
+
+                        const proposalsMsg: ServerGameProposalsUpdateMsg = {
+                            kind: "gameProposalsUpdate",
+                            gameProposals: this.gameProposals
+                        }
+                        this.outgoingMessages.push({ payload: proposalsMsg });
                     }
                     else {
-                        messages.push({
+                        this.outgoingMessages.push({
                             payload: {
-                                kind: 'gameProposalRefused',
+                                kind: 'gameJoinRefused',
                                 proposalId: payload.proposalId,
                                 reason: 'full'
-                            } as ServerGameProposalRefusedMsg,
+                            } as ServerGameJoinRefusedMsg,
                             clientId
                         })
                     }
                 }
             }
-            else if (payload.kind === "startGame" && this.currentProposal) {
-                const { acceptedPlayerIds, gameKey } = this.currentProposal;
+            else if (payload.kind === "gameProposalExit") {
+                const gameProposal = this.gameProposals[payload.proposalId];
+                if (gameProposal) {
+                    const playerIds = gameProposal.acceptedPlayerIds;
+                    const index = playerIds.indexOf(message.clientId)
+                    if (index >= 0) {
+                        gameProposal.acceptedPlayerIds.splice(index, 1);
+                        const payload: ServerGameProposalsUpdateMsg = {
+                            kind: 'gameProposalsUpdate',
+                            gameProposals: this.gameProposals
+                        }
+                        this.outgoingMessages.push({ payload });
+                    }
+                }
+            }
+            else if (payload.kind === "gameProposalDelete") {
+                const gameProposal = this.gameProposals[payload.proposalId];
+                if (gameProposal) {
+                    delete this.gameProposals[payload.proposalId];
+                    const messagePayload: ServerGameProposalsUpdateMsg = {
+                        kind: 'gameProposalsUpdate',
+                        gameProposals: this.gameProposals
+                    }
+                    this.outgoingMessages.push({ payload: messagePayload });
+                }
+            }
+            else if (payload.kind === "startGame") {
+                const currentProposal = this.gameProposals[payload.proposalId];
+                const { acceptedPlayerIds, gameKey } = currentProposal;
                 const { minPlayers } = GAMES[gameKey];
-                const minPlayersOk = !minPlayers || acceptedPlayerIds.size >= minPlayers;
+                const minPlayersOk = !minPlayers || acceptedPlayerIds.length >= minPlayers;
 
-                if (minPlayersOk && this.currentProposal.proposerId === clientId) {
-                    const gameStartedMessage = this.startGameFromProposal();
-                    if (gameStartedMessage) messages.push(gameStartedMessage);
+                if (minPlayersOk && currentProposal.proposerId === clientId) {
+                    this.startGameFromProposal(currentProposal.proposalId);
                 }
             }
         });
@@ -325,26 +369,21 @@ export class LobbyServer {
             kind: "update",
             people: updatedPeople
         };
-        messages.push({ payload: updateMessage });
+        this.outgoingMessages.push({ payload: updateMessage });
         // -lobby
         
         // +game
         Object.entries(this.games).forEach(([gameId, game]) => {
-            // Get messages for this game
             const gameMsgs = gameMessagesByGameId[gameId] || [];
             
-            // Extract game data from GameMsg wrapper
             const unwrappedGameMessages: IncomingMsg[] = gameMsgs.map(msg => ({
                 clientId: msg.clientId,
                 payload: (msg.payload as GameMsg).data
             }));
             
-            // Process game tick
             const gameOutgoingMessages = game.tick(unwrappedGameMessages, dt);
-            
-            // Wrap game messages in GameMsg and add to output
             gameOutgoingMessages.forEach(m => {
-                messages.push({
+                this.outgoingMessages.push({
                     clientId: m.clientId,
                     payload: {
                         kind: "game",
@@ -361,38 +400,34 @@ export class LobbyServer {
         });
         // -game
 
+        const messages = this.outgoingMessages;
+        this.outgoingMessages = [];
         return messages;
     }
     
-    private handleGameProposal(clientId: string, gameKey: string): void {
-        // one proposal at a time
-        if (this.currentProposal !== null) return;
-        
+    private newGameProposal(clientId: string, gameKey: string): void {
         this.proposalIdCounter += 1;
         const proposalId = this.proposalIdCounter + '';
         
-        this.currentProposal = {
+        this.gameProposals[proposalId] = {
             gameKey: gameKey,
             proposerId: clientId,
             proposalId,
-            acceptedPlayerIds: new Set([clientId]) // Proposer auto-accepts
+            acceptedPlayerIds: [clientId]
         };
         
-        // send proposal to clients
-        this.outgoingMessages.push({
-            payload: {
-                kind: 'gameProposal',
-                gameKey,
-                proposerId: clientId,
-                proposalId
-            } as ServerGameProposalMsg
-        });
+        const proposalsMsg: ServerGameProposalsUpdateMsg = {
+            kind: "gameProposalsUpdate",
+            gameProposals: this.gameProposals
+        };
+        this.outgoingMessages.push({ payload: proposalsMsg });
     }
     
-    private startGameFromProposal(): OutgoingMsg | null {
-        if (this.currentProposal === null) return null;
-        
-        const { gameKey, acceptedPlayerIds } = this.currentProposal;
+    private startGameFromProposal(proposalId: string): OutgoingMsg | null {
+        const currentProposal = this.gameProposals[proposalId];
+        if (!currentProposal) return null;
+
+        const { gameKey, acceptedPlayerIds } = currentProposal;
         const gameInfo = GAMES[gameKey];
         if (!gameInfo) return null;
         const game: GameServer = new gameInfo.server()
@@ -415,15 +450,19 @@ export class LobbyServer {
         game.init(players);
         this.games[gameId] = game;
         this.gamesNames[gameId] = gameKey;
-        
-        this.currentProposal = null;
-        
-        return {
-            payload: {
-                kind: "gameStarted",
-                gameId, gameKey, players
-            }
+        delete this.gameProposals[proposalId];
+
+        const startMsg: ServerGameStartedMsg = {
+            kind: "gameStarted",
+            gameId, gameKey, players, proposalId
         };
+        this.outgoingMessages.push({ payload: startMsg });
+
+        const proposalsMsg: ServerGameProposalsUpdateMsg = {
+            kind: "gameProposalsUpdate",
+            gameProposals: this.gameProposals
+        };
+        this.outgoingMessages.push({ payload: proposalsMsg });
     }
 }
 
@@ -457,7 +496,6 @@ export class LobbyClient {
 
     public characterSelect: CharacterSelect;
     public gameSelect: GameSelect;
-
     public gamesBtn: Button;
 
     public outgoingMessages: LobbyClientMsg[] = [];
@@ -498,8 +536,18 @@ export class LobbyClient {
                 proposalId
             });
         };
+        const onQueueExit = (proposalId: string, isProposer: boolean) => {
+            if (!isProposer) this.outgoingMessages.push({
+                kind: 'gameProposalExit',
+                proposalId,
+            } as ClientGameProposalExitMsg);
+            else this.outgoingMessages.push({
+                kind: 'gameProposalDelete',
+                proposalId
+            } as ClientGameProposalDeleteMsg);
+        };
         this.gameSelect = new GameSelect(userInput,
-            onGameSelected, onGameJoined, onGameStarted);
+            onGameSelected, onGameJoined, onGameStarted, onQueueExit);
 
         this.gamesBtn = new Button('Games', userInput, () => {
             this.gameSelect.show();
@@ -606,7 +654,6 @@ export class LobbyClient {
 
     async handleMessage(message: LobbyServerMsg) {
         if (message.kind === "gameStarted") {
-            this.gameSelect.scratchGameProposal();
             this.gameSelect.hide();
 
             // ignore if already in a game of if i'm not in players list
@@ -618,23 +665,20 @@ export class LobbyClient {
             await this.currentGame.init(message.players);
             this.currentGameId = message.gameId;
         }
-        else if (message.kind === "gameProposal") {
-            const { proposerId, proposalId, gameKey } = message;
-            const proposer = this.people[proposerId];
-            const isProposer = proposerId === this.myId;
-            const players = {[proposerId]: proposer }
-            this.gameSelect.initGameProposal(proposalId, proposerId, players, isProposer, gameKey);
-        }
-        else if (message.kind === "gameProposalAccepted") {
-            const { proposalId, accepterId } = message;
-            const accepter = this.people[message.accepterId];
-            this.gameSelect.addPlayerToProposal(proposalId, accepterId, accepter);
-        }
-        else if (message.kind === "gameProposalRefused") {
+        // else if (message.kind === "gameProposalAccepted") {
+        //     const { proposalId, accepterId } = message;
+        //     const accepter = this.people[message.accepterId];
+        //     this.gameSelect.addPlayerToProposal(proposalId, accepterId, accepter);
+        // }
+        else if (message.kind === "gameJoinRefused") {
             const { reason } = message;
+            this.gameSelect.backToMain();
             if (reason === 'full') alert("Can't join, game is full");
             else alert("Couldn't join game");
-            this.gameSelect.exitJoinedGame();
+        }
+        else if (message.kind === "gameProposalsUpdate") {
+            const proposals = this.extendGameProposals(message.gameProposals);
+            this.gameSelect.resetGameProposals(proposals);
         }
         else if (message.kind === "game") {
             if (this.currentGame && message.gameId === this.currentGameId) {
@@ -643,20 +687,14 @@ export class LobbyClient {
         }
         else if (message.kind === "init") {
             this.myId = message.yourId;
-            const clientPeople = message.people as Record<string, ClientPerson>;
-            Object.values(clientPeople).forEach(person => {
+            this.people = message.people as Record<string, ClientPerson>;
+            Object.values(this.people).forEach(person => {
                 person.xTarget = person.x;
                 person.yTarget = person.y;
             });
-            this.people = clientPeople;
+            const proposals = this.extendGameProposals(message.gameProposals);
+            this.gameSelect.resetGameProposals(proposals);
 
-            if (message.gameProposal) {
-                const { proposalId, proposerId, gameKey, acceptedPlayerIds } = message.gameProposal;
-                const isProposer = proposerId === this.myId;
-                const playersWhoAccepted: Record<string, Player> = {};
-                acceptedPlayerIds.forEach(id => playersWhoAccepted[id] = this.people[id]);
-                this.gameSelect.initGameProposal(proposalId, proposerId, playersWhoAccepted, isProposer, gameKey);
-            }
         }
         else if (message.kind === "nameIsTaken") {
             alert("nickname is already taken");
@@ -684,6 +722,8 @@ export class LobbyClient {
         }
         else if (message.kind === "exit") {
             delete this.people[message.id];
+            this.gameSelect.removePlayer(message.id);
+            // TODO remove player from games too
         }
     }
 
@@ -706,7 +746,7 @@ export class LobbyClient {
             }
         }
         
-        if (this.currentGame) {
+        if (this.currentGame && this.currentGameId) {
             if (this.currentGame.isFinished()) {
                 this.currentGame = null;
                 this.currentGameId = null;
@@ -716,7 +756,7 @@ export class LobbyClient {
                 gameMessages.forEach((message) => {
                     messages.push({
                         kind: "game",
-                        gameId: this.currentGameId!,
+                        gameId: this.currentGameId,
                         data: message
                     });
                 })
@@ -728,6 +768,21 @@ export class LobbyClient {
 
     private getMe(): ClientPerson | null {
         return this.myId ? this.people[this.myId] : null;
+    }
+
+    private extendGameProposals(proposals: Record<string, GameProposal>): Record<string, ExtendedGameProposal> {
+        const extProposals: Record<string, ExtendedGameProposal> = {};
+        Object.keys(proposals).forEach(proposalId => {
+            const gameProposal = proposals[proposalId];
+            const { proposerId, gameKey, acceptedPlayerIds } = gameProposal;
+            const isProposer = proposerId === this.myId;
+            const players: Record<string, Player> = {};
+            acceptedPlayerIds.forEach(id => players[id] = this.people[id]);
+            extProposals[proposalId] = {
+                proposalId, proposerId, isProposer, gameKey, players 
+            };
+        });
+        return extProposals;
     }
 } 
 
