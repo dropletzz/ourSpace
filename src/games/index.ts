@@ -16,6 +16,7 @@ import { SlitherClient, SlitherServer } from "./slitherIO/slitherIO";
 import { SpaceClient, SpaceServer } from "./space-invaders";
 import { PacmanClient, PacmanServer } from "./pacman";
 import { PolloAMollaServer, PolloAMollaClient } from "./PolloAMolla/game";
+import { DodgeballClient, DodgeballServer } from "./dodgeball";
 
 export type GameInfo = {
   client: new (userInput: UserInput, myId: string) => GameClient;
@@ -130,5 +131,12 @@ export const GAMES: Record<string, GameInfo> = {
         name: "Pollo A Molla",
         minPlayers: 1,
         maxPlayers: 20,
+    },
+    dodgeball: {
+        client: DodgeballClient,
+        server: DodgeballServer,
+        name: "Dodgeball Chaos",
+        minPlayers: 2,
+        maxPlayers: 8,
     },
 }
