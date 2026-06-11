@@ -365,11 +365,13 @@ export class LobbyServer {
         });
 
         // mandiamo il messaggio "update" a tutti i client
-        const updateMessage: ServerUpdateMsg = {
-            kind: "update",
-            people: updatedPeople
-        };
-        this.outgoingMessages.push({ payload: updateMessage });
+        if (Object.keys(updatedPeople).length) {
+            const updateMessage: ServerUpdateMsg = {
+                kind: "update",
+                people: updatedPeople
+            };
+            this.outgoingMessages.push({ payload: updateMessage });
+        }
         // -lobby
         
         // +game
@@ -559,53 +561,16 @@ export class LobbyClient {
             this.currentGame.draw(ctx, dt);
         } else if (this.gameSelect.isShowing()) {
             this.gameSelect.draw(ctx);
+        } else if (this.getMe()) {
+            this.updateLobby(dt);
+            this.drawLobby(ctx, dt);
         } else {
-            const me = this.getMe();
-            if (me) this.drawLobby(ctx, me, dt);
-            else this.characterSelect.draw(ctx);
+            this.characterSelect.draw(ctx);
         }
     }
 
-    private drawLobby(ctx: CanvasRenderingContext2D, me: ClientPerson, dt: number) {
-        const {
-            screenW, screenH, zoom,
-            moveDirectionX, moveDirectionY
-        } = this.userInput;
-
-        // gestione movimento
-        me.xTarget = me.xTarget + moveDirectionX * dt * PERSON_SPEED;
-        me.yTarget = me.yTarget + moveDirectionY * dt * PERSON_SPEED;
-
-        // collisione con gli edifici
-        const clientPlayerRect: Rectangle = {
-            x: me.xTarget - PERSON_W / 2,
-            y: me.yTarget - PERSON_H / 2,
-            w: PERSON_W,
-            h: PERSON_H,
-        };
-        for (const building of buildings) {
-            for (const box of building.collisionBoxes) {
-                const side = getCollisionSide(clientPlayerRect, box);
-                if (side !== "none") {
-                    if (side === "left") me.xTarget = box.x - PERSON_W / 2;
-                    else if (side === "right") me.xTarget = box.x + box.w + PERSON_W / 2;
-                    else if (side === "top") me.yTarget = box.y - PERSON_H / 2;
-                    else if (side === "bottom") me.yTarget = box.y + box.h + PERSON_H / 2;
-                }
-            }
-            building.update(clientPlayerRect);
-        }
-
-        // controllo che il giocatore non esca dallo spazio di gioco
-        if (me.yTarget - PERSON_H/2 < worldBounds.top) me.yTarget = worldBounds.top + PERSON_H/2 + EPSILON;
-        if (me.yTarget + PERSON_H/2 > worldBounds.bottom) me.yTarget = worldBounds.bottom - PERSON_H/2 - EPSILON;
-        if (me.xTarget - PERSON_W/2 < worldBounds.left) me.xTarget = worldBounds.left + PERSON_W/2 + EPSILON;
-        if (me.xTarget + PERSON_W/2 > worldBounds.right) me.xTarget = worldBounds.right - PERSON_W/2 - EPSILON;
-
-        // la camera segue il giocatore
-        this.camera.x = me.x;
-        this.camera.y = me.y;
-        this.camera.zoom = zoom;
+    private drawLobby(ctx: CanvasRenderingContext2D, dt: number) {
+        const { screenW, screenH } = this.userInput;
 
         // pulisci lo schermo
         ctx.beginPath();
@@ -625,24 +590,18 @@ export class LobbyClient {
         ctx.fillStyle = "#58a515";
         ctx.fill();
 
-        // disegna l'interno degli edifici
+        // interno degli edifici
         for (const building of buildings) {
             building.draw(ctx, dt);
         }
 
-        // sposta le persone e disegnale
         Object.values(this.people).forEach((person) => {
-            if (person.xTarget)
-                person.x = smoothChange(person.x, person.xTarget, dt, 0.05);
-            if (person.yTarget)
-                person.y = smoothChange(person.y, person.yTarget, dt, 0.05);
-
             const drawPerson = getCharacterDrawFunction(person.character);
             drawPerson(ctx, person.x, person.y, PERSON_W, PERSON_H, );
             drawPersonName(ctx, person);
         });
 
-        // disegna l'esterno degli edifici
+        // esterno degli edifici
         for (const building of buildings) {
             building.drawFront(ctx);
         }
@@ -650,6 +609,51 @@ export class LobbyClient {
         ctx.restore();
         
         this.gamesBtn.draw(ctx, screenW - 110, 10, 100, 30);
+    }
+
+    updateLobby(dt: number): void {
+        const me = this.getMe();
+        const { zoom, moveDirectionX, moveDirectionY } = this.userInput;
+
+        // gestione movimento
+        me.xTarget = me.xTarget + moveDirectionX * dt * PERSON_SPEED;
+        me.yTarget = me.yTarget + moveDirectionY * dt * PERSON_SPEED;
+
+        Object.values(this.people).forEach((person) => {
+            if (person.xTarget)
+                person.x = smoothChange(person.x, person.xTarget, dt, 0.05);
+            if (person.yTarget)
+                person.y = smoothChange(person.y, person.yTarget, dt, 0.05);
+        });
+
+        // collisione con gli edifici
+        const clientPlayerRect: Rectangle = {
+            x: me.xTarget - PERSON_W / 2,
+            y: me.yTarget - PERSON_H / 2,
+            w: PERSON_W,
+            h: PERSON_H,
+        };
+        for (const building of buildings) {
+            for (const box of building.collisionBoxes) {
+                const side = getCollisionSide(clientPlayerRect, box);
+                if (side === "left") me.xTarget = box.x - PERSON_W / 2;
+                else if (side === "right") me.xTarget = box.x + box.w + PERSON_W / 2;
+                else if (side === "top") me.yTarget = box.y - PERSON_H / 2;
+                else if (side === "bottom") me.yTarget = box.y + box.h + PERSON_H / 2;
+            }
+            building.update(clientPlayerRect);
+        }
+
+        // controllo che il giocatore non esca dallo spazio di gioco
+        if (me.yTarget - PERSON_H/2 < worldBounds.top) me.yTarget = worldBounds.top + PERSON_H/2 + EPSILON;
+        if (me.yTarget + PERSON_H/2 > worldBounds.bottom) me.yTarget = worldBounds.bottom - PERSON_H/2 - EPSILON;
+        if (me.xTarget - PERSON_W/2 < worldBounds.left) me.xTarget = worldBounds.left + PERSON_W/2 + EPSILON;
+        if (me.xTarget + PERSON_W/2 > worldBounds.right) me.xTarget = worldBounds.right - PERSON_W/2 - EPSILON;
+
+        // la camera segue il giocatore
+        this.camera.x = me.x;
+        this.camera.y = me.y;
+        this.camera.zoom = zoom;
     }
 
     async handleMessage(message: LobbyServerMsg) {
