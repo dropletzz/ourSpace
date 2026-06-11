@@ -82,8 +82,7 @@ export class GameSelect {
         const shiftProposal = (n: number) => {
             const proposalIds = Object.keys(this.gameProposals).sort();
             if (proposalIds.length === 0) {
-                this.state = "main";
-                this.selectedGameProposalId = null;
+                this.reset();
             }
             else {
                 const index = proposalIds.indexOf(this.selectedGameProposalId);
@@ -146,20 +145,20 @@ export class GameSelect {
             if (!this.isShowing()) return; // bad hack
 
             if (this.state === "main") this.hide();
-            else if (this.state === "gameSelect") this.backToMain();
-            else if (this.state === "gameJoin") this.backToMain();
+            else if (this.state === "gameSelect") this.reset();
+            else if (this.state === "gameJoin") this.reset();
             else if (this.state === "gameQueue") {
                 const gameProposal = this.gameProposals[this.selectedGameProposalId];
                 if (gameProposal) {
                     this.onQueueExit(gameProposal.proposalId, gameProposal.isProposer);
                 }
-                this.backToMain();
+                this.reset();
             }
         });
         this.bottomLeftBtn.setColors({ main: "#a51515" });
     }
 
-    resetGameProposals(proposals: Record<string, ExtendedGameProposal>): void {
+    updateGameProposals(proposals: Record<string, ExtendedGameProposal>): void {
         this.gameProposals = proposals;
         if (this.state === 'waitingForMyProposal') {
             const myProposal = Object.values(proposals).find(p => p.isProposer);
@@ -169,12 +168,13 @@ export class GameSelect {
             }
         }
         else if (this.state === 'gameQueue') {
-            if (!proposals[this.selectedGameProposalId]) this.backToMain();
+            if (!proposals[this.selectedGameProposalId]) this.reset();
         }
     }
 
-    backToMain() {
+    reset() {
         this.state = 'main';
+        this.selectedGameKeyIndex = 0;
         this.selectedGameProposalId = null;
     }
 

@@ -654,31 +654,28 @@ export class LobbyClient {
 
     async handleMessage(message: LobbyServerMsg) {
         if (message.kind === "gameStarted") {
-            this.gameSelect.hide();
-
             // ignore if already in a game of if i'm not in players list
             if (this.currentGame || !message.players[this.myId]) return;
 
+            this.gameSelect.hide();
+            this.gameSelect.reset();
+
             const gameInfo = GAMES[message.gameKey];
             if (!gameInfo) return;
+
             this.currentGame = new gameInfo.client(this.userInput, this.myId!);
             await this.currentGame.init(message.players);
             this.currentGameId = message.gameId;
         }
-        // else if (message.kind === "gameProposalAccepted") {
-        //     const { proposalId, accepterId } = message;
-        //     const accepter = this.people[message.accepterId];
-        //     this.gameSelect.addPlayerToProposal(proposalId, accepterId, accepter);
-        // }
         else if (message.kind === "gameJoinRefused") {
             const { reason } = message;
-            this.gameSelect.backToMain();
+            this.gameSelect.reset();
             if (reason === 'full') alert("Can't join, game is full");
             else alert("Couldn't join game");
         }
         else if (message.kind === "gameProposalsUpdate") {
             const proposals = this.extendGameProposals(message.gameProposals);
-            this.gameSelect.resetGameProposals(proposals);
+            this.gameSelect.updateGameProposals(proposals);
         }
         else if (message.kind === "game") {
             if (this.currentGame && message.gameId === this.currentGameId) {
@@ -693,7 +690,7 @@ export class LobbyClient {
                 person.yTarget = person.y;
             });
             const proposals = this.extendGameProposals(message.gameProposals);
-            this.gameSelect.resetGameProposals(proposals);
+            this.gameSelect.updateGameProposals(proposals);
 
         }
         else if (message.kind === "nameIsTaken") {
