@@ -15,7 +15,7 @@ export type IncomingMsg = {
 };
 
 export type OutgoingMsg = {
-    clientId?: string; // if no clientId, message is broadcast
+    clientIds?: string[]; // if no clientIds, message is broadcast
     payload: any
 };
 
@@ -99,6 +99,7 @@ console.log("Server ws in ascolto sulla porta " + SERVER_PORT);
 
 let idCounter: number = 0;
 let incomingMessages: IncomingMsg[] = []; 
+const socketsById: Record<string, any> = {};
 
 wsServer.on("connection", (ws, req) => {
     const clientIp = req.socket.remoteAddress;
@@ -108,6 +109,7 @@ wsServer.on("connection", (ws, req) => {
     idCounter+= 1;
     const id = idCounter + '';
     ws.id = id;
+    socketsById[id] = ws;
     lobby.clientConnected(id);
 
     // Mettiamo i messaggi in arrivo dai client in una coda
@@ -125,7 +127,8 @@ wsServer.on("connection", (ws, req) => {
     // Segnaliamo l'uscita di un client a tutti gli altri
     ws.on("close", data => {
         console.log("Client disconnesso: " + clientIp);
-        lobby.clientClosed(id);
+        lobby.clientClosed(ws.id);
+        delete socketsById[id];
     });
 });
 
@@ -143,10 +146,16 @@ function tick(){
 
     outgoingMessages.forEach(message => {
         const messageString = JSON.stringify(message.payload);
-        wsServer.clients.forEach(socket => {
-            if (socket.id === message.clientId) socket.send(messageString);
-            else if (!message.clientId) socket.send(messageString);
-        })
+
+        if (message.clientIds) {
+            message.clientIds.forEach(id => {
+                const socket = socketsById[id];
+                if (socket) socket.send(messageString);
+            })
+        }
+        else {
+            wsServer.clients.forEach(socket => socket.send(messageString))
+        }
     });
 }
 setInterval(tick, 1000/TICK_FREQUENCY)

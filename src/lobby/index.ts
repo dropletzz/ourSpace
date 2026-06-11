@@ -143,7 +143,7 @@ export class LobbyServer {
     public outgoingMessages: OutgoingMsg[];
 
     public games: Record<string, GameServer> = {};
-    public gamesNames: Record<string, string> = {};
+    public gamesInfo: Record<string, { key: string, playerIds: string[] }> = {};
     private gameIdCounter: number = 0;
     
     private gameProposals: Record<string, GameProposal>;
@@ -156,8 +156,8 @@ export class LobbyServer {
 
         setInterval(() => {
             console.log('\n=====GIOCHI ATTIVI==========================')
-            Object.keys(this.games).forEach(key => {
-                console.log(`${key} -> ${this.gamesNames[key]}`);
+            Object.keys(this.games).forEach(id => {
+                console.log(`${id} -> ${this.gamesInfo[id].key}`);
             })
             console.log('============================================')
             console.log('\n=====PROPOSTE DI GIOCO======================')
@@ -176,16 +176,16 @@ export class LobbyServer {
                 acceptedPlayerIds: [...p.acceptedPlayerIds]
             }
         });
-        const message = {
-            clientId: id,
-            payload: {
-                kind: 'init',
-                yourId: id,
-                people: this.people,
-                gameProposals: gameProposals
-            } as ServerInitMsg
+        const initMessage: ServerInitMsg = {
+            kind: 'init',
+            yourId: id,
+            people: this.people,
+            gameProposals: gameProposals
         };
-        this.outgoingMessages.push(message)
+        this.outgoingMessages.push({
+            clientIds: [id],
+            payload: initMessage
+        });
     }
 
     clientClosed(id: string) {
@@ -246,7 +246,7 @@ export class LobbyServer {
             if (payload.kind === "init") {
                 if (Object.values(this.people).find(p => p.name === payload.name)) {
                     this.outgoingMessages.push({
-                        clientId: clientId,
+                        clientIds: [clientId],
                         payload: {
                             kind: 'nameIsTaken'
                         }
@@ -321,7 +321,7 @@ export class LobbyServer {
                                 proposalId: payload.proposalId,
                                 reason: 'full'
                             } as ServerGameJoinRefusedMsg,
-                            clientId
+                            clientIds: [clientId]
                         })
                     }
                 }
@@ -383,10 +383,12 @@ export class LobbyServer {
                 payload: (msg.payload as GameMsg).data
             }));
             
+            const gameClientIds = this.gamesInfo[gameId].playerIds;
+            // TODO game outgoing messages are just 'any' and have no client id
             const gameOutgoingMessages = game.tick(unwrappedGameMessages, dt);
             gameOutgoingMessages.forEach(m => {
                 this.outgoingMessages.push({
-                    clientId: m.clientId,
+                    clientIds: gameClientIds,
                     payload: {
                         kind: "game",
                         gameId: gameId,
@@ -397,7 +399,7 @@ export class LobbyServer {
             
             if (game.isFinished()) {
                 delete this.games[gameId];
-                delete this.gamesNames[gameId];
+                delete this.gamesInfo[gameId];
             }
         });
         // -game
@@ -451,7 +453,10 @@ export class LobbyServer {
 
         game.init(players);
         this.games[gameId] = game;
-        this.gamesNames[gameId] = gameKey;
+        this.gamesInfo[gameId]= {
+            key: gameKey,
+            playerIds: Object.keys(players),
+        };
         delete this.gameProposals[proposalId];
 
         const startMsg: ServerGameStartedMsg = {
