@@ -43,6 +43,7 @@ export const getCollisionSide = (rect1: Rectangle, rect2: Rectangle): CollisionS
     return "none";
 }
 
+// +colors
 export const changeLighness = (color: string, percent: number): string => {
     const { h, s, l } = hexToColorHSL(color);
     const newLightness = Math.max(0, Math.min(100, l * (1 + percent)));
@@ -128,3 +129,57 @@ function colorHSLToHex(color: ColorHSL): string {
 
     return `#${toHex(r, 2)}${toHex(g, 2)}${toHex(b, 2)}`;
 }
+// -colors
+
+// +text
+export function fitToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const words = text.split(/\s/);
+    const lines: string[] = [];
+    let line = "", lineW = 0;
+    const spaceW = ctx.measureText(" ").width;
+
+    while (words.length > 0) {
+        const [ word ] = words.splice(0, 1);
+        let wordW = ctx.measureText(word).width;
+        if (wordW > maxWidth) {
+            let remainingW = maxWidth - lineW;
+            if (line !== "") remainingW -= spaceW;
+
+            let chunk = "";
+            for (let i=0; i < word.length; i++) {
+                const newChunk = chunk + word[i];
+                const newChunkW = ctx.measureText(newChunk).width;
+                if (newChunkW > remainingW) break;
+                chunk = newChunk;
+            }
+
+            const newLine = line + (line === "" ? "" : " ") + chunk;
+            lines.push(newLine);
+            line = "";
+            lineW = 0;
+            if (word.length > chunk.length)
+                words.unshift(word.substring(chunk.length));
+        }
+        else {
+            const newLine =  line + (line === "" ? word : " " + word);
+            const newLineW = ctx.measureText(newLine).width;
+            if (newLineW > maxWidth || words.length === 0) {
+                if (line !== "") lines.push(line);
+                line = word;
+                lineW = wordW;
+            }
+            else {
+                line = newLine;
+                lineW = newLineW;
+            }
+        }
+    }
+    if (line !== "") {
+        lines.push(line);
+    }
+
+    return lines;
+}
+
+// export function fitToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+// -text

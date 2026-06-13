@@ -1,4 +1,4 @@
-import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, EPSILON } from '../common';
+import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, EPSILON, fitToWidth } from '../common';
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { ExtendedGameProposal } from './game-select';
@@ -556,6 +556,7 @@ export class LobbyClient {
     }
 
     draw(ctx: CanvasRenderingContext2D, dt: number) {
+
         if (this.currentGame) {
             this.currentGame.draw(ctx, dt);
         } else if (this.gameSelect.isShowing()) {
@@ -566,6 +567,11 @@ export class LobbyClient {
         } else {
             this.characterSelect.draw(ctx);
         }
+
+        const { screenW, screenH } = this.userInput;
+        drawMessage(
+            ctx, "unoduetre-unoduetre-unoduetre-unoduetre volta aiaiaiaiuna gatttttttttttttttttaaaaaaai0aa0a0",
+            18, 0, screenH*.5, screenW*0.3);
     }
 
     private drawLobby(ctx: CanvasRenderingContext2D, dt: number) {
@@ -807,4 +813,25 @@ export function drawPersonName(ctx: CanvasRenderingContext2D, person: Person) {
     ctx.lineWidth = 4;
     ctx.fillStyle = "#eeeeee";
     ctx.fillText(person.name, person.x, nameY);
+}
+
+export function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: number, leftX: number, bottomY: number, maxWidth: number) {
+    const padding = fontSize * 0.25;
+    const lines = fitToWidth(ctx, text, maxWidth - padding*2);
+
+    const lineHeight = fontSize * 1.5;
+    const fullHeight = lineHeight * lines.length + padding;
+    const topY = bottomY - fullHeight;
+
+    ctx.fillStyle = "rgb(0, 0, 0)"; 
+    ctx.fillRect(leftX, topY, maxWidth, fullHeight);
+
+    ctx.font = `${fontSize}px Arial`;
+    lines.forEach((line, i) => {
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.lineWidth = 4;
+        ctx.fillStyle = "#eeeeee";
+        ctx.fillText(line, leftX + padding, topY + padding + i*lineHeight);
+    });
 }
