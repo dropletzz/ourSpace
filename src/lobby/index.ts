@@ -556,7 +556,6 @@ export class LobbyClient {
     }
 
     draw(ctx: CanvasRenderingContext2D, dt: number) {
-
         if (this.currentGame) {
             this.currentGame.draw(ctx, dt);
         } else if (this.gameSelect.isShowing()) {
@@ -816,6 +815,7 @@ export function drawPersonName(ctx: CanvasRenderingContext2D, person: Person) {
 }
 
 export function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: number, leftX: number, bottomY: number, maxWidth: number) {
+    ctx.font = `${fontSize}px Arial`;
     const padding = fontSize * 0.25;
     const lines = fitToWidth(ctx, text, maxWidth - padding*2);
 
@@ -826,7 +826,6 @@ export function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSiz
     ctx.fillStyle = "rgb(0, 0, 0)"; 
     ctx.fillRect(leftX, topY, maxWidth, fullHeight);
 
-    ctx.font = `${fontSize}px Arial`;
     lines.forEach((line, i) => {
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
