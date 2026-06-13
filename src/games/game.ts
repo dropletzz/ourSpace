@@ -2,6 +2,15 @@ import { Player } from '../common';
 import { IncomingMsg, OutgoingMsg } from '../server';
 
 export abstract class GameServer {
+
+    public _key: string;
+    public _players: Record<string, Player>;
+
+    public constructor(key: string, players: Record<string, Player>) {
+        this._key = key;
+        this._players = players;
+    }
+
     abstract init(players: Record<string, Player>);
 
     abstract tick(

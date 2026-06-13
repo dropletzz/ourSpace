@@ -17,10 +17,11 @@ import { SpaceClient, SpaceServer } from "./space-invaders";
 import { PacmanClient, PacmanServer } from "./pacman";
 import { PolloAMollaServer, PolloAMollaClient } from "./PolloAMolla/game";
 import { DodgeballClient, DodgeballServer } from "./dodgeball";
+import { Player } from "../common";
 
 export type GameInfo = {
   client: new (userInput: UserInput, myId: string) => GameClient;
-  server: new () => GameServer;
+  server: new (key: string, players: Record<string, Player>) => GameServer;
   name: string;
   minPlayers?: number;
   maxPlayers?: number;

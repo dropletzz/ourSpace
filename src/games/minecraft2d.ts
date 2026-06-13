@@ -1526,8 +1526,9 @@ export class MinecraftDiamondRushServer extends GameServer {
 	forceSnapshot: boolean;
 	pendingBlockUpdates: WorldBlockUpdate[];
 
-	constructor() {
-		super();
+    public constructor(key: string, players: Record<string, Player>) {
+        super(key, players);
+
 		this.players = {};
 		this.world = new MinecraftWorld(MC2D_SEED_DEFAULT);
 		this.matchEndsAtMs = Date.now();

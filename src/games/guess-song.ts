@@ -185,8 +185,9 @@ export class GuessSongServer extends GameServer {
     private pendingBroadcast: boolean = false;
     private playedTrackKeys: Set<string>;
 
-    constructor() {
-        super();
+    public constructor(key: string, players: Record<string, Player>) {
+        super(key, players);
+
         this.playedTrackKeys = new Set<string>();
         this.gameState = {
             phase: 'selection',

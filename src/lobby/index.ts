@@ -143,7 +143,6 @@ export class LobbyServer {
     public outgoingMessages: OutgoingMsg[];
 
     public games: Record<string, GameServer> = {};
-    public gamesInfo: Record<string, { key: string, playerIds: string[] }> = {};
     private gameIdCounter: number = 0;
     
     private gameProposals: Record<string, GameProposal>;
@@ -157,7 +156,7 @@ export class LobbyServer {
         setInterval(() => {
             console.log('\n=====GIOCHI ATTIVI==========================')
             Object.keys(this.games).forEach(id => {
-                console.log(`${id} -> ${this.gamesInfo[id].key}`);
+                console.log(`${id} -> ${this.games[id]._key}`);
             })
             console.log('============================================')
             console.log('\n=====PROPOSTE DI GIOCO======================')
@@ -383,7 +382,7 @@ export class LobbyServer {
                 payload: (msg.payload as GameMsg).data
             }));
             
-            const gameClientIds = this.gamesInfo[gameId].playerIds;
+            const gameClientIds = Object.keys(this.games[gameId]._players);
             // TODO game outgoing messages are just 'any' and have no client id
             const gameOutgoingMessages = game.tick(unwrappedGameMessages, dt);
             gameOutgoingMessages.forEach(m => {
@@ -399,7 +398,6 @@ export class LobbyServer {
             
             if (game.isFinished()) {
                 delete this.games[gameId];
-                delete this.gamesInfo[gameId];
             }
         });
         // -game
@@ -434,11 +432,7 @@ export class LobbyServer {
         const { gameKey, acceptedPlayerIds } = currentProposal;
         const gameInfo = GAMES[gameKey];
         if (!gameInfo) return null;
-        const game: GameServer = new gameInfo.server()
-        
-        this.gameIdCounter += 1;
-        const gameId = this.gameIdCounter + '';
-        
+
         // Get players who accepted the proposal
         const players: Record<string, Player> = {};
         acceptedPlayerIds.forEach(playerId => {
@@ -450,13 +444,13 @@ export class LobbyServer {
                 };
             }
         });
+        const game: GameServer = new gameInfo.server(gameKey, players);
+        
+        this.gameIdCounter += 1;
+        const gameId = this.gameIdCounter + '';
 
         game.init(players);
         this.games[gameId] = game;
-        this.gamesInfo[gameId]= {
-            key: gameKey,
-            playerIds: Object.keys(players),
-        };
         delete this.gameProposals[proposalId];
 
         const startMsg: ServerGameStartedMsg = {

@@ -1,4 +1,4 @@
-import { getCollisionSide } from '../common';
+import { getCollisionSide, Player } from '../common';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { GameClient, GameServer } from './game';
 import { UserInput } from '../client/user-input';

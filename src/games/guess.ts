@@ -48,8 +48,8 @@ export class GuessGameServer extends GameServer {
     private gamePlayers: Record<string, GuessPlayer>;
     private initMessage: GuessGameServerMsg;
 
-    constructor() {
-        super();
+    public constructor(key: string, players: Record<string, Player>) {
+        super(key, players);
 
         this.gameState = {
             targetNumber: Math.floor(Math.random() * 100) + 1, // Random number between 1 and 100
