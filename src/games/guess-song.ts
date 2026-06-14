@@ -501,7 +501,10 @@ export class GuessSongClient extends GameClient {
     constructor(userInput: UserInput, myId: string) {
         super(userInput, myId);
 
-        this.artistInput = new TextInput(this.userInput, 'Inserisci artista', 30);
+        this.artistInput = new TextInput(this.userInput, {
+            placeholder: 'Inserisci artista',
+            maxLength: 30
+        });
 
         this.exitButton = new Button('Esci', this.userInput, () => {
             this.userExited = true;

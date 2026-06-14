@@ -153,22 +153,47 @@ export class Button extends ClickableRectangle {
 
 const EMPTY_FUNCTION = () => {};
 
+type TextInputOptions = {
+    placeholder?: string;
+    colors?: TextInputColors;
+    maxLength?: number;
+    alwaysFocused?: boolean;
+}
+
+type TextInputColors = {
+    background?: string;
+    normal?: string;
+    focused?: string;
+    placeholder?: string;
+}
+export const DEFAULT_TEXT_INPUT_COLORS: TextInputColors = {
+    background: "#fff",
+    normal: "#161616",
+    focused: "#d18800",
+    placeholder: "#555555"
+};
+
 export class TextInput extends ClickableRectangle {
     private text: string;
     private isFocused: boolean;
+    private alwaysFocused: boolean;
     private placeholder: string;
     private maxLength: number | null;
+    private colors: TextInputColors;
 
-    constructor(userInput: UserInput, placeholder: string = "", maxLength: number | null = null) {
+    constructor(userInput: UserInput, opt: TextInputOptions = {}) {
         super(userInput, EMPTY_FUNCTION);
 
         this.text = "";
         this.isFocused = false;
-        this.placeholder = placeholder;
-        this.maxLength = maxLength;
+        this.alwaysFocused = opt.alwaysFocused || false;
+        this.placeholder = opt.placeholder || '';
+        this.maxLength = opt.maxLength || null;
+
+        this.colors = Object.assign(DEFAULT_TEXT_INPUT_COLORS, opt.colors);
 
         document.addEventListener('keydown', (e) => {
-            if (!this.isFocused) return;
+            if (!this.focused()) return;
 
             if (e.key === "Backspace") {
                 this.text = this.text.slice(0, -1);
@@ -177,6 +202,10 @@ export class TextInput extends ClickableRectangle {
                     this.text += e.key;
             }
         });
+    }
+
+    focused(): boolean {
+        return this.alwaysFocused || this.isFocused;
     }
 
     onPointerDown(e: PointerEvent) {
@@ -206,7 +235,7 @@ export class TextInput extends ClickableRectangle {
         ctx.rect(x + w, y, borderThickness, h);
         ctx.rect(x, y - borderThickness, w, borderThickness);
         ctx.rect(x, y + h, w, borderThickness);
-        ctx.fillStyle = this.isFocused ? "#d18800" : "#161616";
+        ctx.fillStyle = this.focused() ? this.colors.focused : this.colors.normal;
         ctx.fill();
         // -bordi
 
@@ -214,7 +243,7 @@ export class TextInput extends ClickableRectangle {
         ctx.beginPath();
         ctx.rect(x, y, w, h);
         ctx.clip();
-        ctx.fillStyle = "#eeeeee";
+        ctx.fillStyle = this.colors.background;
         ctx.fill();
         // -sfondo
 
@@ -224,16 +253,16 @@ export class TextInput extends ClickableRectangle {
         ctx.textBaseline = "middle";
 
         if (this.text.length > 0) {
-            ctx.fillStyle = "#161616";
+            ctx.fillStyle = this.colors.normal;
             ctx.fillText(this.text, x + leftPadding, y + h / 2);
-        } else if (!this.isFocused) {
-            ctx.fillStyle = "#555555";
+        } else if (!this.focused()) {
+            ctx.fillStyle = this.colors.placeholder;
             ctx.fillText(this.placeholder, x + leftPadding, y + h / 2);
         }
         // -testo
 
         // +cursore
-        if (this.isFocused) {
+        if (this.focused()) {
             if (Math.floor(Date.now() / 500) % 2 === 0) {
                 const textWidth = ctx.measureText(this.text.length > 0 ? this.text : "").width;
                 const cursorX = x + leftPadding + textWidth + h*0.1; // xdsff
@@ -242,7 +271,7 @@ export class TextInput extends ClickableRectangle {
                 ctx.moveTo(cursorX, y + h * 0.2);
                 ctx.lineTo(cursorX, y + h * 0.8);
                 ctx.lineWidth = h * 0.07;
-                ctx.strokeStyle = "#161616";
+                ctx.strokeStyle = this.colors.normal;
                 ctx.stroke();
             }
         }

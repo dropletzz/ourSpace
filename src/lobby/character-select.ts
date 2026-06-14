@@ -25,7 +25,10 @@ export class CharacterSelect {
         this.characterNames = getCharacterNames();
         this.selectedCharacterIndex = 0;
         
-        this.nameInput = new TextInput(userInput, 'nickname', 20);
+        this.nameInput = new TextInput(userInput, {
+            placeholder: 'nickname',
+            maxLength: 20
+        });
         
         this.leftBtn = new Button('<', userInput, () => {
             this.selectedCharacterIndex = mod(this.selectedCharacterIndex + 1, this.characterNames.length);

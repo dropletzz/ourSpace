@@ -2,7 +2,7 @@ import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, 
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { ExtendedGameProposal } from './game-select';
-import { Button, TextInput } from '../client/ui-elements';
+import { Button, DEFAULT_TEXT_INPUT_COLORS, TextInput } from '../client/ui-elements';
 import { GameServer } from '../games/game';
 import { GAMES } from '../games/index'
 
@@ -581,7 +581,10 @@ export class LobbyClient {
 
         this.chatMessages = {};
         this.chatIsOpened = false;
-        this.chatMsgInput = new TextInput(userInput);
+        this.chatMsgInput = new TextInput(userInput, {
+            alwaysFocused: true,
+            colors: { focused: DEFAULT_TEXT_INPUT_COLORS.normal }
+        });
         window.addEventListener('keydown', e => {
             if (e.code === 'Enter') {
                 if (this.chatIsOpened) {
@@ -595,6 +598,7 @@ export class LobbyClient {
                 }
                 else {
                     this.chatIsOpened = true;
+                    this.chatMsgInput.clear();
                 }
             }
             else if (e.code === 'Escape') {
