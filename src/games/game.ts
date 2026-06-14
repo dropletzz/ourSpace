@@ -18,6 +18,9 @@ export abstract class GameServer {
         dt: number
     ): OutgoingMsg[];
 
+    public handleChatMsg(msg: string): void {
+    }
+
     abstract isFinished(): boolean;
 }
 

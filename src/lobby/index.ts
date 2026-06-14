@@ -2,7 +2,7 @@ import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, 
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { ExtendedGameProposal } from './game-select';
-import { Button } from '../client/ui-elements';
+import { Button, TextInput } from '../client/ui-elements';
 import { GameServer } from '../games/game';
 import { GAMES } from '../games/index'
 
@@ -67,16 +67,6 @@ type ServerGameStartedMsg = {
     proposalId: string;
 };
 
-type LobbyServerMsg =
-    | ServerInitMsg
-    | ServerNameIsTakenMsg
-    | ServerUpdateMsg 
-    | ServerExitMsg
-    | ServerGameJoinRefusedMsg
-    | ServerGameProposalsUpdateMsg
-    | ServerGameStartedMsg
-    | GameMsg;
-
 type ClientInitMsg = {
     kind: "init";
     name: string;
@@ -114,6 +104,28 @@ type ClientStartGameMsg = {
     proposalId: string;
 };
 
+type ServerChatMsg = {
+    kind: "chat";
+    playerId: string;
+    message: string;
+}
+
+type ClientChatMsg = {
+    kind: "chat";
+    message: string;
+}
+
+type LobbyServerMsg =
+    | ServerInitMsg
+    | ServerNameIsTakenMsg
+    | ServerUpdateMsg 
+    | ServerExitMsg
+    | ServerGameJoinRefusedMsg
+    | ServerGameProposalsUpdateMsg
+    | ServerGameStartedMsg
+    | ServerChatMsg
+    | GameMsg;
+
 type LobbyClientMsg = 
     | ClientInitMsg 
     | ClientMoveMsg
@@ -122,6 +134,7 @@ type LobbyClientMsg =
     | ClientStartGameMsg
     | ClientGameProposalExitMsg
     | ClientGameProposalDeleteMsg
+    | ClientChatMsg
     | GameMsg;
 // -messaggi
 
@@ -361,6 +374,14 @@ export class LobbyServer {
                     this.startGameFromProposal(currentProposal.proposalId);
                 }
             }
+            else if (payload.kind === "chat") {
+                const chatMsg: ServerChatMsg = {
+                    kind: 'chat',
+                    playerId: message.clientId,
+                    message: payload.message
+                }
+                this.outgoingMessages.push({ payload: chatMsg })
+            }
         });
 
         // mandiamo il messaggio "update" a tutti i client
@@ -499,6 +520,10 @@ export class LobbyClient {
     public gameSelect: GameSelect;
     public gamesBtn: Button;
 
+    public chatIsOpened: boolean;
+    public chatMsgInput: TextInput;
+    public chatMessages: Record<string, string[] | undefined>;
+
     public outgoingMessages: LobbyClientMsg[] = [];
     
     public currentGame: GameClient | null = null;
@@ -553,6 +578,30 @@ export class LobbyClient {
         this.gamesBtn = new Button('Games', userInput, () => {
             this.gameSelect.show();
         });
+
+        this.chatMessages = {};
+        this.chatIsOpened = false;
+        this.chatMsgInput = new TextInput(userInput);
+        window.addEventListener('keydown', e => {
+            if (e.code === 'Enter') {
+                if (this.chatIsOpened) {
+                    const chatMsg: ClientChatMsg = {
+                        kind: 'chat',
+                        message: this.chatMsgInput.getValue(),
+                    };
+                    this.outgoingMessages.push(chatMsg)
+                    this.chatIsOpened = false;
+                    this.chatMsgInput.clear();
+                }
+                else {
+                    this.chatIsOpened = true;
+                }
+            }
+            else if (e.code === 'Escape') {
+                this.chatIsOpened = false;
+                this.chatMsgInput.clear();
+            }
+        });
     }
 
     draw(ctx: CanvasRenderingContext2D, dt: number) {
@@ -568,9 +617,15 @@ export class LobbyClient {
         }
 
         const { screenW, screenH } = this.userInput;
-        drawMessage(
-            ctx, "unoduetre-unoduetre-unoduetre-unoduetre volta aiaiaiaiuna gatttttttttttttttttaaaaaaai0aa0a0",
-            18, 0, screenH*.5, screenW*0.3);
+
+        if (this.chatIsOpened) {
+            const minWH = Math.min(screenW, screenH)
+            const margin =  minWH * 0.05;
+            const height = minWH * 0.15;
+            const width = screenW - 2*margin;
+
+            this.chatMsgInput.draw(ctx, margin, screenH - margin - height, width, height);
+        }
     }
 
     private drawLobby(ctx: CanvasRenderingContext2D, dt: number) {
@@ -599,10 +654,15 @@ export class LobbyClient {
             building.draw(ctx, dt);
         }
 
-        Object.values(this.people).forEach((person) => {
+        Object.entries(this.people).forEach(([playerId, person]) => {
             const drawPerson = getCharacterDrawFunction(person.character);
             drawPerson(ctx, person.x, person.y, PERSON_W, PERSON_H, );
             drawPersonName(ctx, person);
+            const playerMessages = this.chatMessages[playerId];
+            const messageToShow = playerMessages ? playerMessages[0] : null;
+            if (messageToShow) {
+                drawPersonMessage(ctx, person, messageToShow);
+            }
         });
 
         // esterno degli edifici
@@ -730,6 +790,20 @@ export class LobbyClient {
             this.gameSelect.removePlayer(message.id);
             // TODO remove player from games too
         }
+        else if (message.kind === "chat") {
+            // if (message.playerId !== this.myId) {}
+            const { playerId, message: msg } = message;
+            this.handleChatMsg(playerId, msg);
+        }
+    }
+
+    handleChatMsg(playerId: string, msg: string) {
+        const playerMessages = this.chatMessages[playerId];
+        if (playerMessages) {
+            playerMessages.unshift(msg);
+        } else {
+            this.chatMessages[playerId] = [msg];
+        }
     }
 
     flushMessages(): LobbyClientMsg[] {
@@ -816,6 +890,17 @@ export function drawPersonName(ctx: CanvasRenderingContext2D, person: Person, po
     ctx.fillText(person.name, person.x, nameY);
 }
 
+export function drawPersonMessage(ctx: CanvasRenderingContext2D, person: Person, msg: string) {
+    const fontSize = Math.floor(PERSON_H * 0.15);
+    ctx.font = `${fontSize}px Arial`;
+    const margin = PERSON_H * 0.1;
+
+    const bottomY = person.y - PERSON_H/2 - margin;
+    const msgW = PERSON_W * 2.5;
+
+    drawMessage(ctx, msg, fontSize, person.x - msgW*0.5, bottomY, msgW);
+}
+
 export function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: number, leftX: number, bottomY: number, maxWidth: number) {
     ctx.font = `${fontSize}px Arial`;
     const padding = fontSize * 0.25;
@@ -825,14 +910,14 @@ export function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSiz
     const fullHeight = lineHeight * lines.length + padding;
     const topY = bottomY - fullHeight;
 
-    ctx.fillStyle = "rgb(0, 0, 0)"; 
+    ctx.fillStyle = "rgb(252, 215, 185)"; 
     ctx.fillRect(leftX, topY, maxWidth, fullHeight);
 
     lines.forEach((line, i) => {
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
         ctx.lineWidth = 4;
-        ctx.fillStyle = "#eeeeee";
+        ctx.fillStyle = "#000000";
         ctx.fillText(line, leftX + padding, topY + padding + i*lineHeight);
     });
 }

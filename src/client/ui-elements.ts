@@ -254,4 +254,8 @@ export class TextInput extends ClickableRectangle {
     getValue(): string {
         return this.text;
     }
+
+    clear() {
+        this.text = '';
+    }
 }
