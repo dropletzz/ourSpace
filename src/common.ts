@@ -132,7 +132,7 @@ function colorHSLToHex(color: ColorHSL): string {
 // -colors
 
 // +text
-export function fitToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+export function fitTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
     const words = text.split(/\s/);
     const lines: string[] = [];
     let line = "", lineW = 0;

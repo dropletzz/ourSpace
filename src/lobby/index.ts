@@ -1,4 +1,4 @@
-import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, EPSILON, fitToWidth } from '../common';
+import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, EPSILON, fitTextToWidth } from '../common';
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { ExtendedGameProposal } from './game-select';
@@ -791,13 +791,15 @@ export class LobbyClient {
     }
 } 
 
-export function drawPersonName(ctx: CanvasRenderingContext2D, person: Person) {
+export function drawPersonName(ctx: CanvasRenderingContext2D, person: Person, position: 'top' | 'bottom' = 'bottom') {
     const fontSize = Math.floor(PERSON_H * 0.15);
     ctx.font = `${fontSize}px Arial`;
 
-    const nameY = person.y - PERSON_H/2 - fontSize - PERSON_H*0.08;
+    const nameY = position === 'bottom'
+        ? person.y + PERSON_H/2 + PERSON_H*0.08
+        : person.y - PERSON_H/2 - fontSize - PERSON_H*0.08
     const nameWidth = ctx.measureText(person.name).width;
-    const padding = 4;
+    const padding = fontSize * 0.1;
 
     ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; 
     ctx.fillRect(
@@ -817,7 +819,7 @@ export function drawPersonName(ctx: CanvasRenderingContext2D, person: Person) {
 export function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: number, leftX: number, bottomY: number, maxWidth: number) {
     ctx.font = `${fontSize}px Arial`;
     const padding = fontSize * 0.25;
-    const lines = fitToWidth(ctx, text, maxWidth - padding*2);
+    const lines = fitTextToWidth(ctx, text, maxWidth - padding*2);
 
     const lineHeight = fontSize * 1.5;
     const fullHeight = lineHeight * lines.length + padding;
