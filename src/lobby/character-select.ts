@@ -1,4 +1,4 @@
-import { mod } from '../common';
+import { mod } from '../common/';
 import { Button, TextInput } from '../client/ui-elements';
 import { UserInput } from '../client/user-input';
 import { CHARACTER_STANDARD_HW_RATIO, getCharacterDrawFunction, getCharacterNames } from '../client/characters';

@@ -1,15 +1,7 @@
 import { UserInput } from './user-input';
 import { Rectangle } from '../common';
-
-export const COLOR = {
-    black: "#000",
-    blackish: "#161616",
-    white: "#fff",
-    whiteish: "#e7e7e7",
-    orange: "#d18800",
-    grey: "#555555",
-    greyLight: "#aaaaaa"
-};
+import { COLOR } from '../common/colors';
+import { drawBorder } from './draw';
 
 export abstract class ClickableRectangle {
     protected userInput: UserInput;
@@ -293,14 +285,4 @@ export class TextInput extends ClickableRectangle {
     clear() {
         this.text = '';
     }
-}
-
-function drawBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, thickness: number, color: string = COLOR.blackish) {
-    ctx.beginPath();
-    ctx.rect(x - thickness, y, thickness, h);
-    ctx.rect(x + w, y, thickness, h);
-    ctx.rect(x, y - thickness, w, thickness);
-    ctx.rect(x, y + h, w, thickness);
-    ctx.fillStyle = color;
-    ctx.fill();
 }

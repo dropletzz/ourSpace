@@ -1,4 +1,4 @@
-import { Player, smoothChange } from '../../common';
+import { Player, smoothChange } from '../../common/';
 import { IncomingMsg, OutgoingMsg } from '../../server';
 import { GameClient, GameServer } from '../game';
 import { Button } from '../../client/ui-elements';

@@ -1,4 +1,4 @@
-import { Player } from '../common';
+import { Player } from '../common/';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { GameServer, GameClient } from './game';
 import { UserInput } from '../client/user-input';

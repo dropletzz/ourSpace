@@ -1,4 +1,4 @@
-import { Rectangle, Player, smoothChange, getCollisionSide, EPSILON } from '../common';
+import { Rectangle, Player, smoothChange, getCollisionSide, EPSILON } from '../common/';
 import { drawPersonMessage, drawPersonName } from '../client/draw';
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';

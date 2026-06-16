@@ -1,4 +1,5 @@
-import { changeLighness, Rectangle, smoothChange } from "../common";
+import { Rectangle, smoothChange } from "../common/";
+import { changeLightness } from "../common/colors";
 import { PERSON_W, PERSON_H } from "./index"
 
 export class Arcade {
@@ -34,8 +35,8 @@ export class Arcade {
         this.wallColor = "#9e9e9e";
         this.wallSectionColor = "#9e9e9e";
         this.roofColor = "#c12000";
-        this.roofColorLight = changeLighness(this.roofColor, 0.2);
-        this.roofColorDark = changeLighness(this.roofColor, -0.2);
+        this.roofColorLight = changeLightness(this.roofColor, 0.2);
+        this.roofColorDark = changeLightness(this.roofColor, -0.2);
 
         this.collisionBoxes = this.buildCollisionBoxes();
     }
