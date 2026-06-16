@@ -1,7 +1,7 @@
-import { mod, PERSON_W, PERSON_H } from '../common';
+import { mod } from '../common';
 import { Button, TextInput } from '../client/ui-elements';
 import { UserInput } from '../client/user-input';
-import { getCharacterDrawFunction, getCharacterNames } from '../client/characters';
+import { CHARACTER_STANDARD_HW_RATIO, getCharacterDrawFunction, getCharacterNames } from '../client/characters';
 
 export class CharacterSelect {
     private userInput: UserInput;
@@ -79,7 +79,7 @@ export class CharacterSelect {
         // personaggio
         const characterName = this.characterNames[this.selectedCharacterIndex];
         const characterH = halfSide;
-        const characterW = characterH * PERSON_W / PERSON_H;
+        const characterW = characterH / CHARACTER_STANDARD_HW_RATIO;
         const drawPerson = getCharacterDrawFunction(characterName);
         drawPerson(ctx, 0, 0, characterW, characterH);
 

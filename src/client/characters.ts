@@ -1,4 +1,6 @@
+import { drawStar } from "./draw";
 
+export const CHARACTER_STANDARD_HW_RATIO = 3;
 
 // MAGO
 function drawPersonaggio13(ctx: CanvasRenderingContext2D, x, y, w, h, style: any = {}) {
@@ -270,24 +272,6 @@ function persona1(ctx: CanvasRenderingContext2D, x, y, w, h, style: any = {}) {
     ctx.restore();
 }
 
-function drawStar(ctx: CanvasRenderingContext2D, cx, cy, spikes, outerRadius, innerRadius) {
-    let rot = Math.PI / 2 * 3;
-    let step = Math.PI / spikes;
-
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - outerRadius);
-    for (let i = 0; i < spikes; i++) {
-        ctx.lineTo(cx + Math.cos(rot) * outerRadius, cy + Math.sin(rot) * outerRadius);
-        rot += step;
-
-        ctx.lineTo(cx + Math.cos(rot) * innerRadius, cy + Math.sin(rot) * innerRadius);
-        rot += step;
-    }
-    ctx.lineTo(cx, cy - outerRadius);
-    ctx.closePath();
-    ctx.fillStyle = "#ffd700";
-    ctx.fill();
-}
 function draw11(ctx: CanvasRenderingContext2D, x, y, w, h, style: any = {}) {
     ctx.save();
 

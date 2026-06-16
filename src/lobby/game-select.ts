@@ -1,7 +1,7 @@
-import { mod, Player, PERSON_W, PERSON_H } from '../common';
+import { mod, Player } from '../common';
 import { Button } from '../client/ui-elements';
 import { UserInput } from '../client/user-input';
-import { getCharacterDrawFunction } from '../client/characters';
+import { CHARACTER_STANDARD_HW_RATIO, getCharacterDrawFunction } from '../client/characters';
 import { GAMES } from '../games/index'
 
 type GameSelectState = "main" | "gameSelect" | "waitingForMyProposal" | "gameJoin" | "gameQueue";
@@ -299,7 +299,7 @@ export class GameSelect {
         const playerSpacingH = h / numberOfRows;
         const startX = -w/2 + playerSpacingW/2
         const playerH = playerSpacingH * 0.7;
-        const playerW = playerH * PERSON_W / PERSON_H;
+        const playerW = playerH / CHARACTER_STANDARD_HW_RATIO;
         
         playersList.forEach((player, index) => {
             const x = startX + playerSpacingW * (index % playersPerRow);

@@ -1,16 +1,17 @@
-import { PERSON_W, PERSON_H, Player, smoothChange } from '../../common';
-import { Button } from '../../client/ui-elements';
-import { GAMES } from '../../games/index'
-import { getCollisionSide } from '../../common';
+import { Player, smoothChange } from '../../common';
 import { IncomingMsg, OutgoingMsg } from '../../server';
 import { GameClient, GameServer } from '../game';
-import { drawPersonName } from '../../lobby/index';
+import { Button } from '../../client/ui-elements';
+import { drawPersonName } from '../../client/draw';
+import { UserInput } from '../../client/user-input';
+import { CHARACTER_STANDARD_HW_RATIO, getCharacterDrawFunction } from '../../client/characters';
+
+const PERSON_W = 40;
+const PERSON_H = PERSON_W * CHARACTER_STANDARD_HW_RATIO;
 
 const PERSON_SPEED = 300;
 
 type WeaponType = 'pistol' | 'pump' | 'sniper' | 'assault' | 'grenade' | 'pickaxe' | 'shield' | 'medkit';
-
-const WEAPONS = ['pistol', 'pump', 'sniper', 'assault', 'grenade', 'pickaxe', 'shield', 'medkit'] as const;
 
 const WEAPON_IMAGE_FILES: Record<WeaponType, string> = {
     pistol: 'pistola.png',
@@ -1142,11 +1143,8 @@ export class FortniteServer extends GameServer {
 //////////////////////
 
 
-import { UserInput } from '../../client/user-input';
-
 type ClientPerson = Person;
 
-import { getCharacterDrawFunction } from '../../client/characters';
 
 type ClientPersonExtended = ClientPerson & {
     xTarget: number;
@@ -1928,7 +1926,7 @@ export class FortniteClient extends GameClient {
                     drawPerson(ctx, person.x, person.y, PERSON_W, PERSON_H);
                 }
 
-                drawPersonName(ctx, person);
+                drawPersonName(ctx, person.name, person.x, person.y, PERSON_W, PERSON_H, 'top');
                 
                 if (person === me && person.alive) {
                     const dx = mouseWorldX - me.x;
@@ -2323,7 +2321,5 @@ export class FortniteClient extends GameClient {
     isFinished(): boolean {
         return false;
     }
-    
-
 }
 

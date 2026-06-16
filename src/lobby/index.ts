@@ -1,4 +1,5 @@
-import { PERSON_W, PERSON_H, Rectangle, Player, smoothChange, getCollisionSide, EPSILON, fitTextToWidth } from '../common';
+import { Rectangle, Player, smoothChange, getCollisionSide, EPSILON } from '../common';
+import { drawPersonMessage, drawPersonName } from '../client/draw';
 import { Arcade } from './things';
 import { IncomingMsg, OutgoingMsg } from '../server';
 import { ExtendedGameProposal } from './game-select';
@@ -6,7 +7,17 @@ import { Button, DEFAULT_TEXT_INPUT_COLORS, TextInput } from '../client/ui-eleme
 import { GameServer } from '../games/game';
 import { GAMES } from '../games/index'
 
+// client imports
+import { CharacterSelect } from './character-select';
+import { GameSelect } from './game-select';
+import { CHARACTER_STANDARD_HW_RATIO, getCharacterDrawFunction } from '../client/characters';
+import { UserInput } from '../client/user-input';
+import { GameClient } from '../games/game';
+
+
 const PERSON_SPEED = 300;
+export const PERSON_W = 40;
+export const PERSON_H = PERSON_W * CHARACTER_STANDARD_HW_RATIO;
 
 type Person = Player & {
     x: number;
@@ -492,12 +503,6 @@ export class LobbyServer {
 ////// CLIENT ////////
 //////////////////////
 
-import { CharacterSelect } from './character-select';
-import { GameSelect } from './game-select';
-import { getCharacterDrawFunction } from '../client/characters';
-import { UserInput } from '../client/user-input';
-import { GameClient } from '../games/game';
-
 type ClientPerson = Person & {
     xTarget: number;
     yTarget: number;
@@ -660,12 +665,12 @@ export class LobbyClient {
 
         Object.entries(this.people).forEach(([playerId, person]) => {
             const drawPerson = getCharacterDrawFunction(person.character);
-            drawPerson(ctx, person.x, person.y, PERSON_W, PERSON_H, );
-            drawPersonName(ctx, person);
+            drawPerson(ctx, person.x, person.y, PERSON_W, PERSON_H);
+            drawPersonName(ctx, person.name, person.x, person.y, PERSON_W, PERSON_H);
             const playerMessages = this.chatMessages[playerId];
             const messageToShow = playerMessages ? playerMessages[0] : null;
             if (messageToShow) {
-                drawPersonMessage(ctx, person, messageToShow);
+                drawPersonMessage(ctx, messageToShow, person.x, person.y, PERSON_W, PERSON_H);
             }
         });
 
@@ -868,60 +873,3 @@ export class LobbyClient {
         return extProposals;
     }
 } 
-
-export function drawPersonName(ctx: CanvasRenderingContext2D, person: Person, position: 'top' | 'bottom' = 'bottom') {
-    const fontSize = Math.floor(PERSON_H * 0.15);
-    ctx.font = `${fontSize}px Arial`;
-
-    const nameY = position === 'bottom'
-        ? person.y + PERSON_H/2 + PERSON_H*0.08
-        : person.y - PERSON_H/2 - fontSize - PERSON_H*0.08
-    const nameWidth = ctx.measureText(person.name).width;
-    const padding = fontSize * 0.1;
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.5)"; 
-    ctx.fillRect(
-        person.x - (nameWidth / 2) - padding, 
-        nameY - padding, 
-        nameWidth + (padding * 2), 
-        fontSize + (padding * 2)
-    );
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.lineWidth = 4;
-    ctx.fillStyle = "#eeeeee";
-    ctx.fillText(person.name, person.x, nameY);
-}
-
-export function drawPersonMessage(ctx: CanvasRenderingContext2D, person: Person, msg: string) {
-    const fontSize = Math.floor(PERSON_H * 0.15);
-    ctx.font = `${fontSize}px Arial`;
-    const margin = PERSON_H * 0.1;
-
-    const bottomY = person.y - PERSON_H/2 - margin;
-    const msgW = PERSON_W * 2.5;
-
-    drawMessage(ctx, msg, fontSize, person.x - msgW*0.5, bottomY, msgW);
-}
-
-export function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: number, leftX: number, bottomY: number, maxWidth: number) {
-    ctx.font = `${fontSize}px Arial`;
-    const padding = fontSize * 0.25;
-    const lines = fitTextToWidth(ctx, text, maxWidth - padding*2);
-
-    const lineHeight = fontSize * 1.5;
-    const fullHeight = lineHeight * lines.length + padding;
-    const topY = bottomY - fullHeight;
-
-    ctx.fillStyle = "rgb(252, 215, 185)"; 
-    ctx.fillRect(leftX, topY, maxWidth, fullHeight);
-
-    lines.forEach((line, i) => {
-        ctx.textAlign = "left";
-        ctx.textBaseline = "top";
-        ctx.lineWidth = 4;
-        ctx.fillStyle = "#000000";
-        ctx.fillText(line, leftX + padding, topY + padding + i*lineHeight);
-    });
-}

@@ -1,4 +1,5 @@
-import { changeLighness, PERSON_H, PERSON_W, Rectangle, smoothChange } from "../common";
+import { changeLighness, Rectangle, smoothChange } from "../common";
+import { PERSON_W, PERSON_H } from "./index"
 
 export class Arcade {
     rect: Rectangle;
