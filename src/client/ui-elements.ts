@@ -1,6 +1,16 @@
 import { UserInput } from './user-input';
 import { Rectangle } from '../common';
 
+export const COLOR = {
+    black: "#000",
+    blackish: "#161616",
+    white: "#fff",
+    whiteish: "#e7e7e7",
+    orange: "#d18800",
+    grey: "#555555",
+    greyLight: "#aaaaaa"
+};
+
 export abstract class ClickableRectangle {
     protected userInput: UserInput;
     protected rect: Rectangle;
@@ -113,8 +123,8 @@ export class Button extends ClickableRectangle {
     drawWithLabel(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, w: number, h: number) {
         this.updateRectangle(ctx, x, y, w, h);
 
-        const defaultMain = this.enabled ? "#d18800" : "#555555";
-        const defaultText = this.enabled ? "#e6e6e6" : "#aaaaaa";
+        const defaultMain = this.enabled ? COLOR.orange : COLOR.grey;
+        const defaultText = this.enabled ? COLOR.whiteish : COLOR.greyLight;
         const mainColor = this.colors.main || defaultMain;
         const textColor = this.colors.text || defaultText;
         const shadowColor = this.colors.shadow || "#161616";
@@ -167,10 +177,10 @@ type TextInputColors = {
     placeholder?: string;
 }
 export const DEFAULT_TEXT_INPUT_COLORS: TextInputColors = {
-    background: "#fff",
-    normal: "#161616",
-    focused: "#d18800",
-    placeholder: "#555555"
+    background: COLOR.white,
+    normal: COLOR.blackish,
+    focused: COLOR.orange,
+    placeholder: COLOR.grey,
 };
 
 export class TextInput extends ClickableRectangle {
@@ -230,13 +240,9 @@ export class TextInput extends ClickableRectangle {
 
         // +bordi
         const borderThickness = Math.min(h, w) * 0.1;
-        ctx.beginPath();
-        ctx.rect(x - borderThickness, y, borderThickness, h);
-        ctx.rect(x + w, y, borderThickness, h);
-        ctx.rect(x, y - borderThickness, w, borderThickness);
-        ctx.rect(x, y + h, w, borderThickness);
-        ctx.fillStyle = this.focused() ? this.colors.focused : this.colors.normal;
-        ctx.fill();
+        const borderColor = this.focused() ? this.colors.focused : this.colors.normal;
+        drawBorder(ctx, x, y, w, h, borderThickness, borderColor);
+
         // -bordi
 
         // +sfondo
@@ -287,4 +293,14 @@ export class TextInput extends ClickableRectangle {
     clear() {
         this.text = '';
     }
+}
+
+function drawBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, thickness: number, color: string = COLOR.blackish) {
+    ctx.beginPath();
+    ctx.rect(x - thickness, y, thickness, h);
+    ctx.rect(x + w, y, thickness, h);
+    ctx.rect(x, y - thickness, w, thickness);
+    ctx.rect(x, y + h, w, thickness);
+    ctx.fillStyle = color;
+    ctx.fill();
 }
