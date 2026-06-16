@@ -619,8 +619,8 @@ export class LobbyClient {
         } else if (this.gameSelect.isShowing()) {
             this.gameSelect.draw(ctx);
         } else if (this.getMe()) {
-            this.updateLobby(dt);
-            this.drawLobby(ctx, dt);
+            this.updateWorld(dt);
+            this.drawWorld(ctx, dt);
         } else {
             this.characterSelect.draw(ctx);
         }
@@ -637,7 +637,7 @@ export class LobbyClient {
         }
     }
 
-    private drawLobby(ctx: CanvasRenderingContext2D, dt: number) {
+    private drawWorld(ctx: CanvasRenderingContext2D, dt: number) {
         const { screenW, screenH } = this.userInput;
 
         // pulisci lo schermo
@@ -684,13 +684,15 @@ export class LobbyClient {
         this.gamesBtn.draw(ctx, screenW - 110, 10, 100, 30);
     }
 
-    updateLobby(dt: number): void {
+    updateWorld(dt: number): void {
         const me = this.getMe();
         const { zoom, moveDirectionX, moveDirectionY } = this.userInput;
 
         // gestione movimento
-        me.xTarget = me.xTarget + moveDirectionX * dt * PERSON_SPEED;
-        me.yTarget = me.yTarget + moveDirectionY * dt * PERSON_SPEED;
+        if (!this.chatIsOpened) {
+            me.xTarget = me.xTarget + moveDirectionX * dt * PERSON_SPEED;
+            me.yTarget = me.yTarget + moveDirectionY * dt * PERSON_SPEED;
+        }
 
         Object.values(this.people).forEach((person) => {
             if (person.xTarget)
