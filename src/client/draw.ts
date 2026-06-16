@@ -1,3 +1,5 @@
+import { COLOR } from '../common/colors'
+
 export function drawPersonName(ctx: CanvasRenderingContext2D, name: string, x: number, y: number, w: number, h: number, position: 'top' | 'bottom' = 'bottom') {
     const fontSize = Math.floor(h * 0.15);
     ctx.font = `${fontSize}px Arial`;
@@ -45,10 +47,10 @@ export function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, 
 export function drawPersonMessage(ctx: CanvasRenderingContext2D, msg: string, x: number, y: number, w: number, h: number) {
     const fontSize = Math.floor(h * 0.15);
     ctx.font = `${fontSize}px Arial`;
-    const margin = h * 0.1;
+    const margin = h * 0.15;
 
     const bottomY = y - h/2 - margin;
-    const msgW = w * 2.5;
+    const msgW = w * 4;
 
     drawMessage(ctx, msg, fontSize, x - msgW*0.5, bottomY, msgW);
 }
@@ -58,8 +60,8 @@ function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: numb
     const padding = fontSize * 0.25;
     const lines = fitTextToWidth(ctx, text, maxWidth - padding*2);
 
-    const lineHeight = fontSize * 1.5;
-    const fullHeight = lineHeight * lines.length + padding;
+    const lineHeight = fontSize * 1.05;
+    const fullHeight = lineHeight * lines.length + padding*2;
     const topY = bottomY - fullHeight;
 
     ctx.fillStyle = "rgb(252, 215, 185)"; 
@@ -72,6 +74,9 @@ function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: numb
         ctx.fillStyle = "#000000";
         ctx.fillText(line, leftX + padding, topY + padding + i*lineHeight);
     });
+
+    const borderThickness = fontSize * 0.2;
+    drawBorder(ctx, leftX, topY, maxWidth, fullHeight, borderThickness, COLOR.black);
 }
 
 export function drawBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, thickness: number, color: string) {
@@ -84,6 +89,8 @@ export function drawBorder(ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.fill();
 }
 
+
+// TODO fix this: it's making new lines when it should not
 function fitTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
     const words = text.split(/\s/);
     const lines: string[] = [];
