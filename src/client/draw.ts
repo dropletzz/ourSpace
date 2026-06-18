@@ -147,7 +147,7 @@ export function drawComicBalloon(ctx: CanvasRenderingContext2D, x: number, y: nu
     ctx.fill();
 }
 
-// TODO fix this: it's making new lines when it should not
+// TODO this should probably be optimized (something like string views?)
 function fitTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
     const words = text.split(/\s/);
     const lines: string[] = [];
@@ -169,17 +169,21 @@ function fitTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: n
                 chunk = newChunk;
             }
 
+            // fixes infinite looping when a single letter doesn't fit a line
+            if (chunk === "" && line === "") chunk = word[0];
+
             const newLine = line + (line === "" ? "" : " ") + chunk;
             lines.push(newLine);
             line = "";
             lineW = 0;
-            if (word.length > chunk.length)
+            if (word.length > chunk.length) {
                 words.unshift(word.substring(chunk.length));
+            }
         }
         else {
             const newLine =  line + (line === "" ? word : " " + word);
             const newLineW = ctx.measureText(newLine).width;
-            if (newLineW > maxWidth || words.length === 0) {
+            if (newLineW > maxWidth) {
                 if (line !== "") lines.push(line);
                 line = word;
                 lineW = wordW;
