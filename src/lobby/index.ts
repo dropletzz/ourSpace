@@ -1,19 +1,14 @@
+import { IncomingMsg, OutgoingMsg } from '../server';
+import { Button, DEFAULT_TEXT_INPUT_COLORS, TextInput } from '../client/ui-elements';
+import { GameServer, GameClient } from '../games/game';
+import { GAMES } from '../games/'
 import { Rectangle, Player, smoothChange, getCollisionSide, EPSILON } from '../common/';
 import { drawPersonMessage, drawPersonName } from '../client/draw';
 import { Arcade } from './things';
-import { IncomingMsg, OutgoingMsg } from '../server';
-import { ExtendedGameProposal } from './game-select';
-import { Button, DEFAULT_TEXT_INPUT_COLORS, TextInput } from '../client/ui-elements';
-import { GameServer } from '../games/game';
-import { GAMES } from '../games/index'
-
-// client imports
 import { CharacterSelect } from './character-select';
-import { GameSelect } from './game-select';
+import { GameSelect, ExtendedGameProposal } from './game-select';
 import { CHARACTER_STANDARD_HW_RATIO, getCharacterDrawFunction } from '../client/characters';
 import { UserInput } from '../client/user-input';
-import { GameClient } from '../games/game';
-
 
 const PERSON_SPEED = 300;
 export const PERSON_W = 40;
@@ -698,7 +693,6 @@ export class LobbyClient {
             me.yTarget = me.yTarget + moveDirectionY * dt * PERSON_SPEED;
         }
 
-        // collisione con gli edifici
         const clientPlayerRect: Rectangle = {
             x: me.xTarget - PERSON_W / 2,
             y: me.yTarget - PERSON_H / 2,
@@ -716,19 +710,16 @@ export class LobbyClient {
             building.update(clientPlayerRect);
         }
 
-        // controllo che il giocatore non esca dallo spazio di gioco
         if (me.yTarget - PERSON_H/2 < worldBounds.top) me.yTarget = worldBounds.top + PERSON_H/2 + EPSILON;
         if (me.yTarget + PERSON_H/2 > worldBounds.bottom) me.yTarget = worldBounds.bottom - PERSON_H/2 - EPSILON;
         if (me.xTarget - PERSON_W/2 < worldBounds.left) me.xTarget = worldBounds.left + PERSON_W/2 + EPSILON;
         if (me.xTarget + PERSON_W/2 > worldBounds.right) me.xTarget = worldBounds.right - PERSON_W/2 - EPSILON;
 
-        // aggiorna posizione effettiva dei giocatori
         Object.values(this.people).forEach((person) => {
             person.x = smoothChange(person.x, person.xTarget, dt, 0.05);
             person.y = smoothChange(person.y, person.yTarget, dt, 0.05);
         });
 
-        // la camera segue il giocatore
         this.camera.x = me.x;
         this.camera.y = me.y;
         this.camera.zoom = zoom;
@@ -736,7 +727,6 @@ export class LobbyClient {
 
     async handleMessage(message: LobbyServerMsg) {
         if (message.kind === "gameStarted") {
-            // ignore if already in a game of if i'm not in players list
             if (this.currentGame || !message.players[this.myId]) return;
 
             this.gameSelect.hide();
