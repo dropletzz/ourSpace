@@ -698,13 +698,6 @@ export class LobbyClient {
             me.yTarget = me.yTarget + moveDirectionY * dt * PERSON_SPEED;
         }
 
-        Object.values(this.people).forEach((person) => {
-            if (person.xTarget)
-                person.x = smoothChange(person.x, person.xTarget, dt, 0.05);
-            if (person.yTarget)
-                person.y = smoothChange(person.y, person.yTarget, dt, 0.05);
-        });
-
         // collisione con gli edifici
         const clientPlayerRect: Rectangle = {
             x: me.xTarget - PERSON_W / 2,
@@ -728,6 +721,12 @@ export class LobbyClient {
         if (me.yTarget + PERSON_H/2 > worldBounds.bottom) me.yTarget = worldBounds.bottom - PERSON_H/2 - EPSILON;
         if (me.xTarget - PERSON_W/2 < worldBounds.left) me.xTarget = worldBounds.left + PERSON_W/2 + EPSILON;
         if (me.xTarget + PERSON_W/2 > worldBounds.right) me.xTarget = worldBounds.right - PERSON_W/2 - EPSILON;
+
+        // aggiorna posizione effettiva dei giocatori
+        Object.values(this.people).forEach((person) => {
+            person.x = smoothChange(person.x, person.xTarget, dt, 0.05);
+            person.y = smoothChange(person.y, person.yTarget, dt, 0.05);
+        });
 
         // la camera segue il giocatore
         this.camera.x = me.x;
