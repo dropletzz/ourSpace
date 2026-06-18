@@ -590,7 +590,11 @@ export class LobbyClient {
             alwaysFocused: true,
             colors: { focused: DEFAULT_TEXT_INPUT_COLORS.normal }
         });
+
+        // handle chat input
         window.addEventListener('keydown', e => {
+            if (!this.getMe()) return;
+
             if (e.code === 'Enter') {
                 if (this.chatIsOpened) {
                     const chatMsg: ClientChatMsg = {
