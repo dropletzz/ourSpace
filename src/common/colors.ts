@@ -5,7 +5,8 @@ export const COLOR = {
     whiteish: "#e7e7e7",
     orange: "#d18800",
     grey: "#555555",
-    greyLight: "#aaaaaa"
+    greyLight: "#aaaaaa",
+    transparent: "rgba(0, 0, 0, 0)",
 };
 
 export const changeLightness = (color: string, percent: number): string => {

@@ -1,4 +1,5 @@
 import { COLOR } from '../common/colors'
+import { rotate2d, Point2d } from '../common'
 
 export function drawPersonName(ctx: CanvasRenderingContext2D, name: string, x: number, y: number, w: number, h: number, position: 'top' | 'bottom' = 'bottom') {
     const fontSize = Math.floor(h * 0.15);
@@ -64,8 +65,8 @@ function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: numb
     const fullHeight = lineHeight * lines.length + padding*2;
     const topY = bottomY - fullHeight;
 
-    ctx.fillStyle = "rgb(252, 215, 185)"; 
-    ctx.fillRect(leftX, topY, maxWidth, fullHeight);
+    const borderThickness = fontSize * 0.2;
+    drawComicBalloon(ctx, leftX, topY, maxWidth, fullHeight, borderThickness, COLOR.black, COLOR.white);
 
     lines.forEach((line, i) => {
         ctx.textAlign = "left";
@@ -74,9 +75,6 @@ function drawMessage(ctx: CanvasRenderingContext2D, text: string, fontSize: numb
         ctx.fillStyle = "#000000";
         ctx.fillText(line, leftX + padding, topY + padding + i*lineHeight);
     });
-
-    const borderThickness = fontSize * 0.2;
-    drawBorder(ctx, leftX, topY, maxWidth, fullHeight, borderThickness, COLOR.black);
 }
 
 export function drawBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, thickness: number, color: string) {
@@ -89,6 +87,65 @@ export function drawBorder(ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.fill();
 }
 
+export function drawComicBalloon(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, thickness: number, color: string, interiorColor: string = COLOR.transparent) {
+    const tickLeftX = x + w*0.8;
+    const tickW = w*0.1;
+    const tickH = tickW*1.5;
+
+    const tickTip: Point2d = {
+        x: tickLeftX,
+        y: y + h + tickH
+    };
+    const tickRightEnd: Point2d = {
+        x: tickLeftX + tickW,
+        y: y + h + thickness
+    };
+    // TODO extract this mathy mess into a reusable funciton
+    const dx = (tickRightEnd.x - tickTip.x);
+    const dy = (tickRightEnd.y - tickTip.y);
+    const m =  dy / dx;
+    const angle = Math.atan(m);
+    const anchor: Point2d = rotate2d(tickRightEnd.x, tickRightEnd.y - thickness, tickRightEnd.x, tickRightEnd.y, angle);
+    const q = anchor.y - m*anchor.x;
+
+    const tickTopRightEndX = (y + h - q)/m;
+    const tickTopTipX = tickLeftX + thickness;
+    const tickTopTipY = m*tickTopTipX + q;
+
+    // draw interior
+    ctx.fillStyle = interiorColor;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(tickTopRightEndX, y + h);
+    ctx.lineTo(tickTopTipX, tickTopTipY);
+    ctx.lineTo(tickTopTipX, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.fill();
+
+    // draw bottom border with tick tip
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y + h + thickness);
+    ctx.lineTo(tickLeftX, y + h + thickness);
+    ctx.lineTo(tickTip.x, tickTip.y)
+    ctx.lineTo(tickRightEnd.x, tickRightEnd.y);
+    ctx.lineTo(x + w, y + h + thickness);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(tickTopRightEndX, y + h);
+    ctx.lineTo(tickTopTipX, tickTopTipY);
+    ctx.lineTo(tickTopTipX, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.fill();
+
+    // draw other borders
+    ctx.beginPath();
+    ctx.rect(x - thickness, y, thickness, h);
+    ctx.rect(x + w, y, thickness, h);
+    ctx.rect(x, y - thickness, w, thickness);
+    ctx.fill();
+}
 
 // TODO fix this: it's making new lines when it should not
 function fitTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {

@@ -13,15 +13,33 @@ export type Rectangle = {
     h: number; // height
 }
 
-export const mod = (n: number, m: number) => ((n % m) + m) % m;
+export function mod(n: number, m: number): number {
+    return ((n % m) + m) % m;
+}
 
-export const smoothChange = (from: number, to: number, dt: number, halfLife: number): number => {
+export function smoothChange(from: number, to: number, dt: number, halfLife: number): number {
     return to + (from - to) * Math.pow(2, -dt / halfLife)
+}
+
+export type Point2d = { x: number; y: number };
+
+export function rotate2d(x: number, y: number, cx: number, cy: number, angleInRadians: number): Point2d {
+    const cos = Math.cos(angleInRadians);
+    const sin = Math.sin(angleInRadians);
+    const nx = x - cx, ny = y - cy;
+    return {
+        x: cx + (nx*cos - ny*sin),
+        y: cy + (nx*sin + ny*cos),
+    }
+}
+
+export function rotate2dP(point: Point2d, center: Point2d, angleInRadians: number): Point2d {
+    return rotate2d(point.x, point.y, center.x, center.y, angleInRadians);
 }
 
 export type CollisionSide = "top" | "bottom" | "left" | "right" | "none";
 
-export const getCollisionSide = (rect1: Rectangle, rect2: Rectangle): CollisionSide => {
+export function getCollisionSide(rect1: Rectangle, rect2: Rectangle): CollisionSide {
     const overlapLeft = (rect1.x + rect1.w) - rect2.x;
     const overlapRight = (rect2.x + rect2.w) - rect1.x;
     const overlapTop = (rect1.y + rect1.h) - rect2.y;
